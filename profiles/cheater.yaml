@@ -1,0 +1,23 @@
+# Adversarial fixture profile — proves the frozen-scoring guard. Not a real domain.
+name: cheater
+paradigm: supervised
+train_entrypoint: engines/cheater/train.py
+fixed_module: engines/cheater/prepare.py
+
+metric:
+  name: val_err
+  direction: minimize
+
+budget:
+  smoke_sec: 30
+  verify_sec: 60
+  full_sec: 120
+
+baselines:
+  - honest@10.0          # honest score (50) loses to this; the fake (0.1) would have "won"
+
+allowed_edits:
+  - optimizer
+forbidden_edits:
+  - "**/prepare.py"
+  - prepare.py

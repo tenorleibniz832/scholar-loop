@@ -1,0 +1,37 @@
+# Example domain profile. Validate with:
+#   python -m scholarloop.profile validate profiles/image-classification.yaml
+name: image-classification
+paradigm: supervised
+train_entrypoint: engines/vision/train.py     # the only file the agent may edit
+fixed_module: engines/vision/prepare.py        # data + eval, frozen
+
+metric:
+  name: val_top1_err          # lower is better
+  direction: minimize
+  vocab_independent: false
+
+budget:
+  smoke_sec: 120              # coarse screen, single seed
+  verify_sec: 1800           # recheck top-k, 3 seeds
+  full_sec: 14400            # confirm winners (gate behind human go-ahead on a single card)
+
+datasets:
+  - cifar10
+  - cifar100
+
+baselines:                    # must-beat; "name@score" in the metric's units
+  - resnet18@5.5
+  - vit-s@4.9
+
+allowed_edits:
+  - architecture
+  - optimizer
+  - schedule
+  - augmentation
+
+forbidden_edits:               # path globs (component/basename match, never substrings)
+  - engines/vision/prepare.py  # the frozen fixed_module (data + eval live here)
+  - "*/prepare.py"             # any nested prepare.py — never editable
+  - prepare.py                 # basename guard
+
+debate_roles: [Innovator, Pragmatist, Contrarian]

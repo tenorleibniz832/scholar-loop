@@ -1,0 +1,194 @@
+"""The autonomous loop end-to-end on MockLLM: Reasoner proposes → enforce → run → reflect."""
+
+from pathlib import Path
+
+from scholarloop.ledger import Hypothesis, Ledger, LedgerEntry
+from scholarloop.llm import MockLLM
+from scholarloop.orchestrator import Orchestrator
+from scholarloop.profile import load_profile
+from scholarloop.reasoner import Reasoner
+
+ROOT = Path(__file__).resolve().parent.parent
+PROFILE = load_profile(ROOT / "profiles" / "image-classification.yaml")  # minimize, baseline 4.9
+
+
+def _proposal_json(config: dict, *, source="arXiv:1608.03983", predicted_delta=-0.2):
+    return {
+        "reasoning_trace": "ledger shows headroom; trying a cosine+SGD recipe",
+        "config": [{"name": k, "value": v} for k, v in config.items()],
+        "hypothesis": {"claim": "tuned recipe helps", "source": source,
+                       "predicted_effect": "lower val error"},
+        "predicted_delta": predicted_delta,
+    }
+
+
+def _entry(eid, config, score, verdict="discarded"):
+    return LedgerEntry(
+        id=eid, domain="image-classification",
+        hypothesis=Hypothesis(claim="c", source="arXiv:1"),
+        metric_name="val_top1_err", config=config,
+        fidelity=["verify"], metric={"verify": score, "seeds": [score]}, verdict=verdict,
+    )
+
+
+def test_reasoner_enforces_ruled_out_region():
+    # ledger rules out high lr (winners low, all losers high) -> a high-lr proposal must violate
+    entries = [
+        _entry("w1", {"lr": 0.1}, 4.5, verdict="kept"),
+        _entry("w2", {"lr": 0.15}, 4.7, verdict="kept"),
+        _entry("l1", {"lr": 0.4}, 6.0),
+        _entry("l2", {"lr": 0.5}, 6.3),
+    ]
+    llm = MockLLM(jsons=[_proposal_json({"lr": 0.9})])
+    proposal = Reasoner(llm, PROFILE).propose(entries)
+    assert not proposal.admissible
+    assert any("lr>" in v for v in proposal.violations)
+
+
+def test_reasoner_admits_in_bounds_config():
+    entries = [
+        _entry("w1", {"lr": 0.1}, 4.5, verdict="kept"),
+        _entry("w2", {"lr": 0.15}, 4.7, verdict="kept"),
+        _entry("l1", {"lr": 0.4}, 6.0),
+        _entry("l2", {"lr": 0.5}, 6.3),
+    ]
+    llm = MockLLM(jsons=[_proposal_json({"lr": 0.12})])   # inside the winning range
+    proposal = Reasoner(llm, PROFILE).propose(entries)
+    assert proposal.admissible
+    assert proposal.config == {"lr": 0.12}
+
+
+def test_full_autonomous_loop_runs_and_reflects(tmp_path):
+    ledger_path = tmp_path / "ledger.jsonl"
+    # two scripted proposals, both near the stub's hidden optimum (lr.1/depth20/wd5e-4/warmup5)
+    llm = MockLLM(jsons=[
+        _proposal_json({"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}),
+        _proposal_json({"lr": 0.1, "depth": 22, "weight_decay": 5e-4, "warmup": 5},
+                       predicted_delta=-0.1),
+    ])
+    orch = Orchestrator(llm, PROFILE, ledger_path=ledger_path, registry_dir=tmp_path / "registry")
+    entries = orch.run(2, fidelity="smoke")
+
+    assert len(entries) == 2
+    e1, e2 = entries
+    # the proposed config was actually run (captured from the engine)
+    assert e1.config["lr"] == 0.1 and e1.config["depth"] == 20
+    # reasoning trace + search-space constraints were recorded
+    assert "trace" in e1.reasoning and "search_space_constraints" in e1.reasoning
+    # predict-then-verify: e1 has no parent (no prior kept) → measured None; e2 calibrates vs e1
+    assert e1.prediction["predicted"] == -0.2
+    assert e2.prediction["measured"] is not None
+    assert e2.prediction["calibration_error"] is not None
+    # both kept (near-optimal beats baseline 4.9) and persisted
+    assert {e.verdict for e in entries} == {"kept"}
+    assert len(list(Ledger(ledger_path).read_all())) == 2
+
+
+def test_loop_grounds_on_lit_scout_and_traces_both_agents(tmp_path):
+    from scholarloop.litscout import ArxivClient, LitScout
+    from tests.test_litscout import ATOM_XML
+
+    arxiv = ArxivClient(fetcher=lambda q, n: ATOM_XML)
+    scout = LitScout(MockLLM(jsons=[{"findings": [
+        {"technique": "cosine schedule", "source": "arXiv:1608.03983",
+         "predicted_effect": "lower err", "rationale": "warm restarts"}]}]), arxiv)
+    reasoner_llm = MockLLM(jsons=[_proposal_json(
+        {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5})])
+
+    orch = Orchestrator(reasoner_llm, PROFILE, lit_scout=scout, topic="image classification",
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    entry = orch.step()
+
+    assert entry is not None
+    # the Lit Scout's finding flowed into the Reasoner's search-space priors, then onto the ledger
+    priors = entry.reasoning["search_space_constraints"]["priors"]
+    assert any("cosine schedule" in p for p in priors)
+    # both agents logged to the one shared trace
+    assert {c.agent for c in orch.trace.calls} == {"lit_scout", "reasoner"}
+
+
+def test_full_loop_debate_runs_then_reflector_writes_skill(tmp_path):
+    from scholarloop.debate import DebatePanel
+    from scholarloop.reflector import Reflector
+    from scholarloop.skills import SkillLibrary
+
+    reasoner_llm = MockLLM(jsons=[_proposal_json(
+        {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5})])
+    panel = DebatePanel(MockLLM(jsons=[{"verdict": "run", "concern": ""}] * 3), PROFILE.debate_roles)
+    reflector = Reflector(MockLLM(jsons=[{"worth_recording": True, "category": "optimizer",
+                                          "severity": 0.7, "mitigation": "cosine schedule helps"}]))
+    lib = SkillLibrary(tmp_path / "skills")
+
+    orch = Orchestrator(reasoner_llm, PROFILE, debate_panel=panel, reflector=reflector,
+                        skill_library=lib, ledger_path=tmp_path / "ledger.jsonl",
+                        registry_dir=tmp_path / "registry")
+    entry = orch.step()
+
+    assert entry is not None
+    assert entry.reasoning["debate"]["decision"] == "run"          # panel verdict recorded
+    skills = lib.all()
+    assert len(skills) == 1 and skills[0].source == entry.id        # reflection persisted, tied to the run
+
+
+def test_full_loop_debate_reject_skips_the_run(tmp_path):
+    from scholarloop.debate import DebatePanel
+
+    reasoner_llm = MockLLM(jsons=[_proposal_json(
+        {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5})])
+    panel = DebatePanel(MockLLM(jsons=[{"verdict": "reject", "concern": "a"},
+                                       {"verdict": "reject", "concern": "b"},
+                                       {"verdict": "run", "concern": ""}]), PROFILE.debate_roles)
+    orch = Orchestrator(reasoner_llm, PROFILE, debate_panel=panel,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    assert orch.step() is None
+    assert list(Ledger(tmp_path / "ledger.jsonl").read_all()) == []  # nothing ran
+
+
+def test_funnel_winner_climbs_smoke_verify_full(tmp_path):
+    cfg = {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}   # near-ideal -> beats baseline
+    orch = Orchestrator(MockLLM(jsons=[_proposal_json(cfg)]), PROFILE,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    produced = orch.funnel_step()
+    assert [e.fidelity[0] for e in produced] == ["smoke", "verify", "full"]
+    assert all(e.verdict == "kept" for e in produced)
+    # tiers chain via parent
+    assert produced[1].parent == produced[0].id and produced[2].parent == produced[1].id
+
+
+def test_funnel_loser_dies_at_smoke(tmp_path):
+    cfg = {"lr": 0.05, "depth": 18, "weight_decay": 1e-4, "warmup": 0}   # far from ideal -> ~7.9 > 4.9
+    orch = Orchestrator(MockLLM(jsons=[_proposal_json(cfg)]), PROFILE,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    produced = orch.funnel_step()
+    assert len(produced) == 1
+    assert produced[0].fidelity == ["smoke"] and produced[0].verdict == "discarded"
+
+
+def test_promote_gate_requires_robust_verify(tmp_path):
+    orch = Orchestrator(MockLLM(), PROFILE,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    # mean beats the gate 4.9 but one seed (5.2) does not -> not robust -> no promotion to full
+    fragile = LedgerEntry(id="e", domain="image-classification",
+                          hypothesis=Hypothesis("c", "arXiv:1"), metric_name="val_top1_err",
+                          fidelity=["verify"], metric={"verify": 4.5, "seeds": [4.0, 4.3, 5.2]},
+                          verdict="kept")
+    assert orch._promote(fragile, "verify", 4.9) is False
+    robust = LedgerEntry(id="e2", domain="image-classification",
+                         hypothesis=Hypothesis("c", "arXiv:1"), metric_name="val_top1_err",
+                         fidelity=["verify"], metric={"verify": 4.0, "seeds": [3.8, 4.0, 4.2]},
+                         verdict="kept")
+    assert orch._promote(robust, "verify", 4.9) is True
+    assert orch._promote(robust, "full", 4.9) is False        # full is terminal
+
+
+def test_orchestrator_skips_inadmissible_proposal(tmp_path):
+    ledger_path = tmp_path / "ledger.jsonl"
+    # seed a ledger that rules out high lr
+    led = Ledger(ledger_path)
+    for e in [_entry("w1", {"lr": 0.1}, 4.5, "kept"), _entry("w2", {"lr": 0.15}, 4.7, "kept"),
+              _entry("l1", {"lr": 0.4}, 6.0), _entry("l2", {"lr": 0.5}, 6.3)]:
+        led.append(e)
+    llm = MockLLM(jsons=[_proposal_json({"lr": 0.95})])   # ruled out
+    orch = Orchestrator(llm, PROFILE, ledger_path=ledger_path, registry_dir=tmp_path / "registry")
+    assert orch.step() is None
+    assert len(list(led.read_all())) == 4   # nothing new appended

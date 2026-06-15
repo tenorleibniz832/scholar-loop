@@ -1,0 +1,33 @@
+# Real torch engine profile (sklearn digits + MLP). Validate:
+#   python -m scholarloop.profile validate profiles/digits-mlp.yaml
+name: digits-mlp
+paradigm: supervised
+train_entrypoint: engines/torch_vision/train.py
+fixed_module: engines/torch_vision/prepare.py
+
+metric:
+  name: val_top1_err          # lower is better
+  direction: minimize
+
+budget:
+  smoke_sec: 60               # one real torch run is ~1-2s on CPU; generous headroom
+  verify_sec: 180
+  full_sec: 600
+
+datasets:
+  - sklearn-digits
+
+baselines:
+  - logreg@5.0                # must-beat val error (%)
+
+allowed_edits:
+  - architecture
+  - optimizer
+  - schedule
+  - regularization
+
+forbidden_edits:
+  - "**/prepare.py"
+  - prepare.py
+
+debate_roles: [Innovator, Pragmatist, Contrarian]
