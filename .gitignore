@@ -20,3 +20,6 @@ runs/
 # Local tooling / editor config
 .claude/
 .DS_Store
+
+# Local planning notes (keep out of the public repo)
+impl_plan.md
