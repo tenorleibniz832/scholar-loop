@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔬 ScholarLoop
+# 🔬 Scholar Loop
 
 ### Autonomous, multi-agent AI research — a PhD's workflow on a single-GPU budget.
 
