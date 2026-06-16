@@ -12,7 +12,7 @@ question being asked. Runs on the agent harness.
 from __future__ import annotations
 
 from scholarloop.agent import Agent
-from scholarloop.ledger import LedgerEntry
+from scholarloop.ledger import LedgerEntry, idea_chains
 from scholarloop.profile import Profile
 
 DIRECTOR_SCHEMA = {
@@ -50,7 +50,7 @@ class Director(Agent):
         best = min(kept, key=lambda e: e.primary_score(), default=None) \
             if self.profile.metric.direction == "minimize" \
             else max(kept, key=lambda e: e.primary_score(), default=None)
-        return (f"{len(entries)} experiments run; {len(kept)} kept. "
+        return (f"{len(idea_chains(entries))} distinct ideas over {len(entries)} runs; {len(kept)} kept. "
                 f"Best {self.profile.metric.name}: "
                 f"{best.primary_score() if best else 'none'} (config {best.config if best else '-'}). "
                 f"Recent verdicts: {[e.verdict for e in entries[-5:]]}.")

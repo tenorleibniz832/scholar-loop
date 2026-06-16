@@ -186,3 +186,20 @@ def test_ledger_skips_corrupt_line(tmp_path):
                               metric_name="m", metric={"smoke": 2.0}, verdict="kept"))
     ids = [e.id for e in ledger.read_all()]
     assert ids == ["exp_a", "exp_b"]   # corrupt middle line skipped, both good ones survive
+
+
+def test_idea_chains_groups_funnel_tiers_by_config():
+    from scholarloop.ledger import idea_chains
+
+    def e(eid, cfg, tier, score, verdict, src="arXiv:1"):
+        return LedgerEntry(id=eid, domain="d", hypothesis=Hypothesis("c", src), metric_name="m",
+                           config=cfg, fidelity=[tier], metric={tier: score}, verdict=verdict)
+
+    # one idea climbing smoke->verify (same config), plus a different, discarded idea
+    chains = idea_chains([e("a", {"lr": 0.1}, "smoke", 4.0, "kept"),
+                          e("b", {"lr": 0.1}, "verify", 3.8, "kept"),
+                          e("c", {"lr": 0.5}, "smoke", 9.0, "discarded", src="arXiv:2")])
+    assert len(chains) == 2                                   # two distinct configs = two ideas
+    winner = next(c for c in chains if c["config"] == {"lr": 0.1})
+    assert winner["tiers"] == ["smoke", "verify"]            # the funnel chain rolled up
+    assert winner["top_fidelity"] == "verify" and winner["score"] == 3.8 and winner["verdict"] == "kept"

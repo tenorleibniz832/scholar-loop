@@ -128,6 +128,30 @@ class Ledger:
         return min(kept, key=key) if direction == "minimize" else max(kept, key=key)
 
 
+_TIER_ORDER = {"smoke": 0, "verify": 1, "full": 2}
+
+
+def idea_chains(entries: list[LedgerEntry]) -> list[dict]:
+    """Roll the flat ledger up to the level of *ideas*: group the funnel tiers of one idea
+    (which share a config) and report, per idea, the tiers it reached and its highest-fidelity
+    result. Useful for campaign summaries (Director, write-up) and analysis."""
+    groups: dict[str, list[LedgerEntry]] = {}
+    for e in entries:
+        groups.setdefault(json.dumps(e.config, sort_keys=True), []).append(e)
+    out = []
+    for tiers in groups.values():
+        top = max(tiers, key=lambda e: _TIER_ORDER.get(e.fidelity[0] if e.fidelity else "smoke", 0))
+        out.append({
+            "config": tiers[0].config,
+            "source": tiers[0].hypothesis.source,
+            "tiers": [e.fidelity[0] for e in tiers if e.fidelity],
+            "top_fidelity": top.fidelity[0] if top.fidelity else None,
+            "score": top.primary_score(),
+            "verdict": top.verdict,
+        })
+    return out
+
+
 def _main(argv: list[str]) -> int:
     if not argv:
         print("usage: python -m scholarloop.ledger {show|best} <ledger.jsonl> [--domain D] [--direction minimize|maximize]",
