@@ -20,6 +20,18 @@ hypothesis, **runs real ML experiments**, scores them against a frozen ground-tr
 from its failures, and drafts a peer-reviewed write-up — autonomously, with a deterministic harness
 that keeps the agents honest and **impossible to reward-hack**.
 
+### 📊 Two live runs on **Claude Opus 4.8** — real torch, real API, end to end
+
+| domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
+|---|---|---|---|---|---|---|
+| [**digits-mlp**](examples/sample_run/) | val error | 5.0% | **2.67%** | smoke → verify → full | ≈ $0.60 | reject 3/10 |
+| [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.26** | smoke → verify → full | ≈ $0.40 | reject 3/10 |
+
+In both, an idea climbed the full multi-fidelity funnel to a result that beats the baseline, every
+number traces to a frozen-metric measurement, predict-then-verify caught the Reasoner's optimistic
+predictions — and the system's *own* reviewer still rejected the papers as too marginal. (It's not
+wrong.) Click a domain for the captured paper, run log, and raw ledger.
+
 | Stage | What it does |
 |---|---|
 | 🎯 **Director** | reads ledger + literature trends → sets the next direction, topic & budget |
@@ -96,8 +108,9 @@ A single run shows the system
 
 **Research preview** — the full PhD-workflow skeleton runs end-to-end on real experiments, with the
 anti-reward-hacking guards in place and adversarially reviewed. It has been **run live against the
-real Anthropic API** (see [`examples/sample_run/`](examples/sample_run/) for a captured Opus run
-that beats a baseline and writes itself up) across **two domains** (classification + regression).
-Next: container sandboxing for the residual boundaries, statistical-significance gating, and scale.
+real Anthropic API** across **two domains** — captured verbatim for both
+[classification](examples/sample_run/) and [regression](examples/sample_run_diabetes/), each a
+real Opus campaign that beats its baseline and writes itself up. Next: container sandboxing for the
+residual boundaries and scale.
 
 License: [MIT](LICENSE).

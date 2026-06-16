@@ -62,16 +62,23 @@ def fmt_paper(draft, grounded, ungrounded, review) -> str:
     return "\n".join(out)
 
 
+def _unit(profile) -> str:
+    """Error/accuracy metrics are percentages; RMSE and the like are bare numbers."""
+    name = profile.metric.name.lower()
+    return "%" if ("err" in name or "acc" in name) else ""
+
+
 def fmt_run(profile, entries, skills, usage, model, trace) -> str:
     d, lit = _first(trace, "director"), _first(trace, "lit_scout")
     cost = _cost(model, usage)
+    u = _unit(profile)
     out = [f"# ScholarLoop — autonomous run log", "",
            f"A complete run on the real **{profile.name}** torch engine, driven by **{model}**. "
            f"Every experiment below is a real PyTorch training run; every decision is a real LLM call.", "",
            f"- **{len(entries)}** experiments · **{usage['calls']}** LLM calls · "
            f"{usage['input_tokens']}+{usage['output_tokens']} tokens"
            + (f" · ≈ **${cost:.3f}**" if cost is not None else ""),
-           f"- baseline to beat: {profile.best_baseline()}% {profile.metric.name}", "",
+           f"- baseline to beat: {profile.best_baseline()}{u} {profile.metric.name}", "",
            "## 🎯 Director — direction",
            f"> {d.get('direction', '(n/a)')}  ",
            f"> *topic for the Lit Scout:* {d.get('topic', '(n/a)')}", "",
@@ -84,7 +91,7 @@ def fmt_run(profile, entries, skills, usage, model, trace) -> str:
     for e in entries:
         p = e.prediction or {}
         pm = f"{p.get('predicted')}→{p.get('measured')}" if p.get("measured") is not None else "—"
-        out.append(f"| {e.id} | {e.fidelity[0]} | {e.primary_score()}% | {e.verdict} | {pm} | "
+        out.append(f"| {e.id} | {e.fidelity[0]} | {e.primary_score()}{u} | {e.verdict} | {pm} | "
                    f"{e.hypothesis.source[:60]} |")
     out += ["", "## 🧠 Accumulated skills (self-improvement)", "",
             skills.render() or "_(none recorded)_", "",
@@ -103,13 +110,15 @@ def main() -> int:
     steps = int(os.environ.get("SCHOLARLOOP_STEPS", "3"))
     topic = os.environ.get("SCHOLARLOOP_TOPIC", "small MLP image classification regularization")
     paper_only = bool(os.environ.get("SCHOLARLOOP_PAPER_ONLY"))   # regenerate paper.md from a saved ledger
+    profile_name = os.environ.get("SCHOLARLOOP_PROFILE", "digits-mlp")
+    out = Path(os.environ.get("SCHOLARLOOP_OUT", "")) if os.environ.get("SCHOLARLOOP_OUT") else OUT
 
-    OUT.mkdir(parents=True, exist_ok=True)
-    ledger_path = OUT / "experiments.jsonl"
+    out.mkdir(parents=True, exist_ok=True)
+    ledger_path = out / "experiments.jsonl"
     registry_dir = Path(tempfile.mkdtemp(prefix="paper_reg_"))
     skills_dir = Path(tempfile.mkdtemp(prefix="paper_skl_"))
     llm = AnthropicLLM(model=model)
-    profile = load_profile(ROOT / "profiles" / "digits-mlp.yaml")
+    profile = load_profile(ROOT / "profiles" / f"{profile_name}.yaml")
     # SCHOLARLOOP_PERSIST_SKILLS=1 -> ~/.scholarloop/skills/<domain>, so lessons compound across runs
     skills = (SkillLibrary.for_domain(profile.name) if os.environ.get("SCHOLARLOOP_PERSIST_SKILLS")
               else SkillLibrary(skills_dir))
@@ -136,16 +145,16 @@ def main() -> int:
 
     paper = PaperPipeline(llm, llm, registry_dir=registry_dir).run(
         entries, extra_grounded=[profile.best_baseline()])
-    (OUT / "paper.md").write_text(
+    (out / "paper.md").write_text(
         fmt_paper(paper["draft"], paper["grounded"], paper["ungrounded"], paper["review"]))
     if orch is not None:                            # run.md reflects the campaign; keep it on paper-only re-runs
-        (OUT / "run.md").write_text(fmt_run(profile, entries, skills, llm.usage, model, orch.trace))
+        (out / "run.md").write_text(fmt_run(profile, entries, skills, llm.usage, model, orch.trace))
 
     shutil.rmtree(registry_dir, ignore_errors=True)
     shutil.rmtree(skills_dir, ignore_errors=True)
 
     cost = _cost(model, llm.usage)
-    print(f"\n=== done. artifacts in examples/sample_run/ ===")
+    print(f"\n=== done. artifacts in {out} ===")
     print(f"   paper.md · run.md · experiments.jsonl")
     print(f"   {llm.usage['calls']} LLM calls"
           + (f" · ≈ ${cost:.3f}" if cost is not None else ""))
