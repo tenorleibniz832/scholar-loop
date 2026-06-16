@@ -6,7 +6,7 @@
 
 **read papers → find a gap → run real experiments → reflect → write & self-review**
 
-[![tests](https://img.shields.io/badge/tests-76%20passing-brightgreen)](#-quickstart)
+[![tests](https://github.com/renee-jia/scholar-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/renee-jia/scholar-loop/actions/workflows/ci.yml)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue)](#-quickstart)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![status](https://img.shields.io/badge/status-research%20preview-orange)](#-status)
