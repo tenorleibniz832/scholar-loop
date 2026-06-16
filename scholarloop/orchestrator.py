@@ -42,6 +42,7 @@ class Orchestrator:
                  director: Director | None = None,
                  max_refines: int = 2,
                  promote_z: float = 1.0,   # how many SEMs of margin a verify result needs to reach full
+                 smoke_slack: float = 0.25,  # smoke is single-seed & noisy: promote within this band of the gate
                  trace: AgentTrace | None = None,
                  ledger_path: str | Path = "ledger.jsonl",
                  registry_dir: str | Path = "registry"):
@@ -56,6 +57,7 @@ class Orchestrator:
         self.director = director
         self.max_refines = max_refines
         self.promote_z = promote_z
+        self.smoke_slack = smoke_slack
         # one shared trace across EVERY agent — full auditability of the loop
         for agent in (lit_scout, reflector, advisor, director):
             if agent is not None:
@@ -194,8 +196,19 @@ class Orchestrator:
             return frontier_score
         return frontier_score if self.profile.metric.is_better(frontier_score, baseline) else baseline
 
+    def _relaxed_gate(self, gate: float) -> float:
+        """The smoke screen's bar: the gate widened by `smoke_slack` (a fraction of its magnitude).
+        Smoke is a single noisy seed, so it should only discard ideas that are *clearly* worse than
+        the gate, not borderline ones that a multi-seed verify might confirm. Scale-free, so it works
+        for both error% (gate≈5) and RMSE (gate≈60)."""
+        margin = abs(gate) * self.smoke_slack
+        return gate + margin if self.profile.metric.direction == "minimize" else gate - margin
+
     def _promote(self, entry: LedgerEntry, fidelity: str, gate: float | None) -> bool:
-        """Promotion gate (deterministic): does this tier earn a more expensive confirmation?"""
+        """Promotion gate (deterministic): does this tier earn a more expensive confirmation?
+        Smoke screens with slack (high recall); verify enforces the strict significance gate
+        (high precision) — the standard multi-fidelity shape: cheap stages keep candidates, expensive
+        stages confirm them."""
         if fidelity == "full":
             return False                                   # full is terminal
         score = entry.primary_score()
@@ -203,6 +216,8 @@ class Orchestrator:
             return False
         if gate is None:
             return True                                    # nothing to gate on yet — climb
+        if fidelity == "smoke":                            # coarse screen: only kill the clearly-worse
+            return self.profile.metric.is_better(score, self._relaxed_gate(gate))
         if not self.profile.metric.is_better(score, gate):
             return False                                   # didn't clear the bar — drop it cheaply
         if fidelity == "verify":                           # statistical-significance gate (not just the mean)

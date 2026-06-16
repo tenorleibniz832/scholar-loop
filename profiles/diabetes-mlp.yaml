@@ -18,7 +18,11 @@ datasets:
   - sklearn-diabetes
 
 baselines:
-  - untuned@60.0             # must-beat val RMSE (a default MLP ~56 clears it; ridge gets ~53)
+  # Must-beat val RMSE = the linear-model reference on this exact frozen split:
+  # OLS/Ridge both reach ~56.4 (mean-predictor is 70.5). The bundled MLP roughly TIES this
+  # (~56.5 across configs), so beating it takes a real improvement — an honest, negative-leaning
+  # domain that exercises the system's truthful reporting rather than a loose bar everything clears.
+  - linear@56.5
 
 allowed_edits:
   - architecture

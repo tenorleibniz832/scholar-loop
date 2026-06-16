@@ -182,6 +182,23 @@ def test_promote_gate_uses_statistical_significance(tmp_path):
     assert orch._promote(tight, "full", 4.9) is False        # full is terminal
 
 
+def test_smoke_screen_keeps_borderline_but_drops_clearly_worse(tmp_path):
+    # Smoke is a single noisy seed: it should keep a borderline idea (worse than the gate but within
+    # the slack band) for a fair multi-seed verify, while still discarding the clearly-worse ones.
+    orch = Orchestrator(MockLLM(), PROFILE,                   # smoke_slack=0.25 default; gate 4.9 -> band 6.125
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+
+    def smoke(score):
+        return LedgerEntry(id="s", domain="image-classification",
+                           hypothesis=Hypothesis("c", "arXiv:1"), metric_name="val_top1_err",
+                           fidelity=["smoke"], metric={"smoke": score, "seeds": [score]}, verdict="kept")
+
+    assert orch._promote(smoke(5.5), "smoke", 4.9) is True    # worse than gate but within slack -> promote
+    assert orch._promote(smoke(7.0), "smoke", 4.9) is False   # clearly worse than the band -> drop cheaply
+    # the slack is smoke-only: at verify the same borderline number must clear the strict gate
+    assert orch._promote(smoke(5.5), "verify", 4.9) is False
+
+
 def test_orchestrator_skips_inadmissible_proposal(tmp_path):
     ledger_path = tmp_path / "ledger.jsonl"
     # seed a ledger that rules out high lr

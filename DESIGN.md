@@ -107,15 +107,19 @@ campaigns** (not just within one run), kept isolated per domain. (Implemented in
 for each idea from L3 (already carries a literature citation + must-beat baseline):
   1. REASONER (§4.5): reason over ledger+lit+skills → diff + prediction + search-space constraints
   2. Guard check: did the diff touch forbidden_edits, or fall outside the constraints? → discard
-  3. SMOKE  (smoke_sec, single seed)        → compare vs baseline; if it loses, kill
-  4. VERIFY (verify_sec, 3 seeds)           → only top-k smoke survivors enter; check statistical significance
+  3. SMOKE  (smoke_sec, single seed)        → coarse screen: kill only ideas clearly worse than the gate (slack band)
+  4. VERIFY (verify_sec, 3 seeds)           → smoke survivors enter; promote only if the pessimistic bound beats the gate
   5. FULL   (full_sec, sparingly)           → only for "stable winners" from verify
   6. Write every number into the VerifiedRegistry + ledger at each step
   7. Advisor analyzes → PROCEED / REFINE (back to step 1) / PIVOT (back to L3); kill after N REFINEs
   8. REFLECTOR (§4.5): score prediction vs measurement → distill one lesson into the Skill Library
 ```
 
-The **multi-fidelity funnel** is the survival strategy on a small cluster: a 120s coarse screen kills 90%, and only winners burn a full run. On a single card, set `full_sec` very large and gate it behind a human go-ahead. **Implemented** in `Orchestrator.funnel_step` (`run(funnel=True)`): one idea climbs smoke→verify→full, each tier cleared by a deterministic `_promote` gate — beat the baseline to leave smoke, and beat it *on the worst seed* (robustness, not just the mean) to leave verify. Tiers chain via `parent`; the Reasoner/debate/reflect/advisor wrap the idea once, not per tier.
+The **multi-fidelity funnel** is the survival strategy on a small cluster: a 120s coarse screen kills 90%, and only winners burn a full run. On a single card, set `full_sec` very large and gate it behind a human go-ahead. **Implemented** in `Orchestrator.funnel_step` (`run(funnel=True)`): one idea climbs smoke→verify→full, each tier cleared by a deterministic `_promote` gate. The two stages are deliberately asymmetric — the standard high-recall-then-high-precision funnel shape:
+- **Smoke** is a single noisy seed, so it screens with **slack** (`smoke_slack`, default 0.25): it drops only ideas *clearly* worse than the gate (more than 25% of the gate's magnitude past it), keeping borderline candidates that a multi-seed verify might confirm. This is what stops a good idea from dying to one unlucky smoke seed.
+- **Verify** runs 3 seeds and enforces the strict bar: the **pessimistic confidence bound** (`mean ± promote_z·SEM`, not just the mean) must beat the gate, so a win has to be robust to seed noise.
+
+The gate itself is the more stringent of the frontier and the per-domain `baseline`, which is calibrated to what the engine can actually reach (see the profile comments: digits ~3.1% floor → baseline 5.0; diabetes ties the linear model ~56.5). Tiers chain via `parent`; the Reasoner/debate/reflect/advisor wrap the idea once, not per tier.
 
 ---
 

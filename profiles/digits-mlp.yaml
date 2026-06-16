@@ -18,7 +18,11 @@ datasets:
   - sklearn-digits
 
 baselines:
-  - logreg@5.0                # must-beat val error (%)
+  # Must-beat val error (%). Calibrated to this engine: the default MLP gets ~8%, modest tunes ~6%,
+  # and a strong wide/long-trained config reaches ~3.1% — so 5.0 is a real bar that separates good
+  # recipes from mediocre ones without being unreachable. Smoke screens with slack (Orchestrator
+  # smoke_slack) so a borderline ~6% idea still earns a multi-seed verify before this gate decides.
+  - logreg@5.0
 
 knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
   lr: 0.1
