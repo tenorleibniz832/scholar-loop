@@ -19,7 +19,7 @@ Everything here is pure and testable with no LLM and no GPU.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from statistics import mean
+from statistics import mean, stdev
 
 from scholarloop.ledger import LedgerEntry
 from scholarloop.profile import Profile
@@ -153,6 +153,21 @@ def analyze_search_space(
 def is_duplicate_config(config: dict, entries: list[LedgerEntry]) -> bool:
     """True if this exact config was already evaluated (config-level novelty check)."""
     return any(e.config == config for e in entries if e.config)
+
+
+def confidence_bound(values, direction: str, z: float = 1.0) -> float:
+    """Pessimistic z·SEM bound on the mean across seeds — the side that must still clear a gate
+    for the improvement to count as real rather than noise (statistical-significance gating).
+
+    For a `minimize` metric this is mean + z·SEM (the high/worse side); for `maximize`, mean − z·SEM.
+    With a single value (or z=0) it's just the mean.
+    """
+    vals = list(values)
+    m = mean(vals)
+    if len(vals) < 2 or z == 0:
+        return round(m, 4)
+    sem = stdev(vals) / (len(vals) ** 0.5)
+    return round(m + z * sem if direction == "minimize" else m - z * sem, 4)
 
 
 def calibration_error(predicted_delta: float, measured_delta: float) -> float:

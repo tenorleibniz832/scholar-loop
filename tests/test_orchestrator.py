@@ -164,21 +164,22 @@ def test_funnel_loser_dies_at_smoke(tmp_path):
     assert produced[0].fidelity == ["smoke"] and produced[0].verdict == "discarded"
 
 
-def test_promote_gate_requires_robust_verify(tmp_path):
-    orch = Orchestrator(MockLLM(), PROFILE,
+def test_promote_gate_uses_statistical_significance(tmp_path):
+    orch = Orchestrator(MockLLM(), PROFILE,            # promote_z=1.0 default
                         ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
-    # mean beats the gate 4.9 but one seed (5.2) does not -> not robust -> no promotion to full
-    fragile = LedgerEntry(id="e", domain="image-classification",
-                          hypothesis=Hypothesis("c", "arXiv:1"), metric_name="val_top1_err",
-                          fidelity=["verify"], metric={"verify": 4.5, "seeds": [4.0, 4.3, 5.2]},
-                          verdict="kept")
-    assert orch._promote(fragile, "verify", 4.9) is False
-    robust = LedgerEntry(id="e2", domain="image-classification",
-                         hypothesis=Hypothesis("c", "arXiv:1"), metric_name="val_top1_err",
-                         fidelity=["verify"], metric={"verify": 4.0, "seeds": [3.8, 4.0, 4.2]},
-                         verdict="kept")
-    assert orch._promote(robust, "verify", 4.9) is True
-    assert orch._promote(robust, "full", 4.9) is False        # full is terminal
+    # mean (4.8) is below the gate 4.9, but the seed spread makes it NOT significant -> no promotion
+    noisy = LedgerEntry(id="e", domain="image-classification",
+                        hypothesis=Hypothesis("c", "arXiv:1"), metric_name="val_top1_err",
+                        fidelity=["verify"], metric={"verify": 4.8, "seeds": [4.4, 4.8, 5.2]},
+                        verdict="kept")
+    assert orch._promote(noisy, "verify", 4.9) is False
+    # a tight result clearly below the gate -> the pessimistic bound clears it -> promote
+    tight = LedgerEntry(id="e2", domain="image-classification",
+                        hypothesis=Hypothesis("c", "arXiv:1"), metric_name="val_top1_err",
+                        fidelity=["verify"], metric={"verify": 4.0, "seeds": [3.8, 4.0, 4.2]},
+                        verdict="kept")
+    assert orch._promote(tight, "verify", 4.9) is True
+    assert orch._promote(tight, "full", 4.9) is False        # full is terminal
 
 
 def test_orchestrator_skips_inadmissible_proposal(tmp_path):

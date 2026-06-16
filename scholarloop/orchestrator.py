@@ -27,6 +27,7 @@ from scholarloop.litscout import LitScout
 from scholarloop.llm import LLMClient
 from scholarloop.profile import Profile
 from scholarloop.reasoner import Reasoner
+from scholarloop.reasoning import confidence_bound
 from scholarloop.reflector import Reflector
 from scholarloop.skills import SkillLibrary
 
@@ -40,6 +41,7 @@ class Orchestrator:
                  advisor: Advisor | None = None,
                  director: Director | None = None,
                  max_refines: int = 2,
+                 promote_z: float = 1.0,   # how many SEMs of margin a verify result needs to reach full
                  trace: AgentTrace | None = None,
                  ledger_path: str | Path = "ledger.jsonl",
                  registry_dir: str | Path = "registry"):
@@ -53,6 +55,7 @@ class Orchestrator:
         self.advisor = advisor
         self.director = director
         self.max_refines = max_refines
+        self.promote_z = promote_z
         # one shared trace across EVERY agent — full auditability of the loop
         for agent in (lit_scout, reflector, advisor, director):
             if agent is not None:
@@ -202,11 +205,11 @@ class Orchestrator:
             return True                                    # nothing to gate on yet — climb
         if not self.profile.metric.is_better(score, gate):
             return False                                   # didn't clear the bar — drop it cheaply
-        if fidelity == "verify":                           # require robustness across seeds, not just the mean
+        if fidelity == "verify":                           # statistical-significance gate (not just the mean)
             seeds = entry.metric.get("seeds") or [score]
-            worst = max(seeds) if self.profile.metric.direction == "minimize" else min(seeds)
-            if not self.profile.metric.is_better(worst, gate):
-                return False
+            bound = confidence_bound(seeds, self.profile.metric.direction, self.promote_z)
+            if not self.profile.metric.is_better(bound, gate):
+                return False                               # improvement isn't robust to seed noise
         return True
 
     def _apply_advice(self, entries: list[LedgerEntry]) -> None:

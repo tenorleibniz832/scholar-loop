@@ -27,7 +27,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from statistics import mean
+from statistics import mean, stdev
 
 from scholarloop.ledger import Hypothesis, Ledger, LedgerEntry
 from scholarloop.profile import Profile, load_profile
@@ -179,7 +179,8 @@ def run_experiment(
         per_seed = [float(r["value"]) for r in results]
         config = results[0].get("config", {})   # hparams are fixed across seeds for one run
         agg = round(mean(per_seed), 4)
-        registry.capture(f"{profile.metric.name}.{fidelity}", agg, seeds=per_seed)
+        std = round(stdev(per_seed), 4) if len(per_seed) > 1 else 0.0
+        registry.capture(f"{profile.metric.name}.{fidelity}", agg, seeds=per_seed, std=std)
         registry.save()
         baseline = profile.best_baseline()
         if baseline is None:

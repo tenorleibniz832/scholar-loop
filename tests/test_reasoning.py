@@ -7,6 +7,7 @@ from scholarloop.profile import load_profile
 from scholarloop.reasoning import (
     analyze_search_space,
     calibration_error,
+    confidence_bound,
     is_duplicate_config,
     score_prediction,
 )
@@ -69,6 +70,15 @@ def test_prediction_calibration():
     pred = score_prediction(child, parent, predicted_delta=-0.5)
     assert pred["measured"] == -0.3          # 4.7 - 5.0
     assert pred["calibration_error"] == 0.2  # |−0.5 − (−0.3)|
+
+
+def test_confidence_bound_is_pessimistic_on_the_metric_side():
+    assert confidence_bound([4.0], "minimize") == 4.0          # single value -> the mean
+    assert confidence_bound([3.8, 4.0, 4.2], "minimize", z=0) == 4.0   # z=0 -> the mean
+    # minimize: the bound sits ABOVE the mean (the worse side that must still clear a gate)
+    assert confidence_bound([3.8, 4.0, 4.2], "minimize", z=1.0) > 4.0
+    # maximize: the bound sits BELOW the mean
+    assert confidence_bound([3.8, 4.0, 4.2], "maximize", z=1.0) < 4.0
 
 
 def test_prediction_without_parent_is_uncalibrated():
