@@ -65,6 +65,7 @@ class Profile:
     forbidden_edits: tuple[str, ...]
     datasets: tuple[str, ...] = ()
     baselines: tuple[str, ...] = ()
+    knobs: dict = field(default_factory=dict)   # tunable hyperparameters (name → default value)
     debate_roles: tuple[str, ...] = ("Innovator", "Pragmatist", "Contrarian")
     source_path: Path | None = field(default=None, compare=False)
 
@@ -137,6 +138,7 @@ def load_profile(path: str | Path) -> Profile:
         forbidden_edits=tuple(raw["forbidden_edits"]),
         datasets=tuple(raw.get("datasets", [])),
         baselines=tuple(raw.get("baselines", [])),
+        knobs=dict(raw.get("knobs", {})),
         debate_roles=tuple(raw.get("debate_roles", ["Innovator", "Pragmatist", "Contrarian"])),
         source_path=path,
     )

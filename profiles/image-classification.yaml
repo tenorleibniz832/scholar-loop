@@ -23,6 +23,12 @@ baselines:                    # must-beat; "name@score" in the metric's units
   - resnet18@5.5
   - vit-s@4.9
 
+knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
+  lr: 0.05
+  depth: 18
+  weight_decay: 0.0001
+  warmup: 0
+
 allowed_edits:
   - architecture
   - optimizer

@@ -14,6 +14,7 @@ ideas literature-grounded instead of blind local hill-climbing.
 
 from __future__ import annotations
 
+import sys
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -40,11 +41,19 @@ class ArxivClient:
         self.timeout = timeout
 
     def _http_fetch(self, query: str, max_results: int) -> str:  # pragma: no cover - network
-        url = "http://export.arxiv.org/api/query?" + urllib.parse.urlencode({
+        url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode({
             "search_query": query, "max_results": max_results,
             "sortBy": "submittedDate", "sortOrder": "descending",
         })
-        with urllib.request.urlopen(url, timeout=self.timeout) as r:
+        # Use certifi's CA bundle when available (some Python installs lack a usable system store).
+        ctx = None
+        try:
+            import certifi
+            import ssl
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            ctx = None
+        with urllib.request.urlopen(url, timeout=self.timeout, context=ctx) as r:
             return r.read().decode("utf-8")
 
     def search(self, topic: str, max_results: int = 5) -> list[Paper]:
@@ -108,8 +117,17 @@ class LitScout(Agent):
                 f"predicted_effect, and a one-line rationale.\n\nPapers:\n{body}")
 
     def scout(self, topic: str) -> tuple[str, list[str]]:
-        """Retrieve + extract. Returns (lit_context prose, lit_priors list)."""
-        papers = self.arxiv.search(topic, self.max_results)
+        """Retrieve + extract. Returns (lit_context prose, lit_priors list).
+
+        A retrieval failure (network/parse) degrades gracefully to no literature rather than
+        killing the campaign — the loop can still reason from the ledger.
+        """
+        try:
+            papers = self.arxiv.search(topic, self.max_results)
+        except Exception as e:  # pragma: no cover - network
+            print(f"lit_scout: arxiv fetch failed ({type(e).__name__}), continuing without literature",
+                  file=sys.stderr)
+            return "", []
         if not papers:
             return "", []
         findings = self.run({"topic": topic, "papers": papers}).get("findings", [])

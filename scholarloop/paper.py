@@ -58,10 +58,14 @@ def gather_findings(entries: list[LedgerEntry]) -> list[dict]:
     return out
 
 
-def grounded_registry(entries: list[LedgerEntry], registry_dir: str | Path) -> VerifiedRegistry:
+def grounded_registry(entries: list[LedgerEntry], registry_dir: str | Path,
+                      extra: list[float] | None = None) -> VerifiedRegistry:
     """Every number a paper may cite: each kept entry's config values, its score, and its
-    captured measurements. The audit then rejects any number not in this set."""
+    captured measurements, plus any `extra` recorded facts (e.g. the must-beat baseline). The
+    audit then rejects any number not in this set."""
     reg = VerifiedRegistry(path=":grounded:", exp_id="paper")
+    for v in (extra or []):
+        reg.capture(f"extra.{v}", float(v))
     for e in entries:
         if e.verdict != "kept":
             continue
@@ -79,9 +83,13 @@ def grounded_registry(entries: list[LedgerEntry], registry_dir: str | Path) -> V
 
 
 def audit_draft(draft: dict, reg: VerifiedRegistry, ignore: set[float] | None = None) -> list[str]:
-    """Ungrounded numbers anywhere in the draft (empty == every number is backed by a fact)."""
+    """Ungrounded numbers anywhere in the draft (empty == every number is backed by a fact).
+
+    Citation years (bare integers in 1900–2099) are ignored — they're references, not results.
+    """
     text = "\n".join([draft.get("title", ""), draft.get("abstract", "")]
                      + [f"{s['heading']}\n{s['body']}" for s in draft.get("sections", [])])
+    ignore = set(ignore or []) | {float(y) for y in range(1900, 2100)}
     return reg.audit_text(text, ignore=ignore)
 
 
@@ -132,10 +140,11 @@ class PaperPipeline:
         self.reviewer = Reviewer(reviewer_llm, trace=trace)
         self.registry_dir = Path(registry_dir)
 
-    def run(self, entries: list[LedgerEntry]) -> dict:
+    def run(self, entries: list[LedgerEntry], extra_grounded: list[float] | None = None) -> dict:
         findings = gather_findings(entries)
         draft = self.writer.draft(findings)
-        ungrounded = audit_draft(draft, grounded_registry(entries, self.registry_dir))
+        reg = grounded_registry(entries, self.registry_dir, extra=extra_grounded)
+        ungrounded = audit_draft(draft, reg)
         review = self.reviewer.review(draft)
         return {"draft": draft, "ungrounded": ungrounded,
                 "grounded": not ungrounded, "review": review}

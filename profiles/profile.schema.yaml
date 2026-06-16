@@ -68,6 +68,13 @@ properties:
     description: 'Must-beat baselines as "name@score" strings (score is a float, scientific notation ok).'
     items: {type: string, pattern: "^[^@]+@-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$"}
     default: []
+  knobs:
+    type: object
+    description: >
+      The concrete tunable hyperparameters (name → default value) the agent may set in its
+      config. Fed into the Reasoner prompt so it proposes real knobs, not edit-category names.
+    additionalProperties: {type: number}
+    default: {}
   allowed_edits:
     type: array
     minItems: 1

@@ -111,7 +111,9 @@ class Reasoner(Agent):
         parts = [
             head,
             f"Must-beat baseline: {p.best_baseline()} (your config should aim to beat it).",
-            f"Editable knobs (allowed edits): {list(p.allowed_edits)}.",
+            (f"Tunable hyperparameters — set any of these in `config` by their exact names "
+             f"(current defaults shown): {p.knobs}." if p.knobs
+             else f"Editable areas: {list(p.allowed_edits)}."),
             "",
             constraints.to_prompt_block(),
         ]
@@ -123,10 +125,12 @@ class Reasoner(Agent):
             parts += ["", "Lessons from past runs (skill library):", skills]
         parts += [
             "",
-            "Propose the next experiment: a config (hparam name/value pairs to set), a "
-            "hypothesis {claim, source, predicted_effect}, a one-paragraph reasoning_trace, "
-            "and predicted_delta (signed expected change in the metric, negative = improvement "
-            "for a minimize metric). Stay out of the ruled-out regions and do not repeat a tried config.",
+            "Propose the next experiment as a `config`: overrides to the tunable hyperparameters "
+            "above, using their exact names (e.g. one or more of them). Use the `edits` channel "
+            "ONLY to rewrite the train script itself for a genuine architecture change — otherwise "
+            "leave it out. Also give a hypothesis {claim, source, predicted_effect}, a one-paragraph "
+            "reasoning_trace, and predicted_delta (signed expected change in the metric; negative = "
+            "improvement for a minimize metric). Stay out of the ruled-out regions and don't repeat a tried config.",
         ]
         return "\n".join(parts)
 

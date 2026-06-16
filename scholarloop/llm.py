@@ -79,6 +79,7 @@ class AnthropicLLM(LLMClient):
 
     def __init__(self, model: str = DEFAULT_MODEL, *, client=None):
         self.model = model
+        self.usage = {"input_tokens": 0, "output_tokens": 0, "calls": 0}   # cumulative, for cost tracking
         if client is not None:
             self._client = client
         else:
@@ -90,6 +91,15 @@ class AnthropicLLM(LLMClient):
                 ) from e
             self._client = anthropic.Anthropic()
 
+    def _create(self, **kwargs):
+        resp = self._client.messages.create(**kwargs)
+        u = getattr(resp, "usage", None)
+        if u is not None:
+            self.usage["input_tokens"] += getattr(u, "input_tokens", 0) or 0
+            self.usage["output_tokens"] += getattr(u, "output_tokens", 0) or 0
+        self.usage["calls"] += 1
+        return resp
+
     def _text_of(self, response) -> str:
         return next((b.text for b in response.content if b.type == "text"), "")
 
@@ -99,7 +109,7 @@ class AnthropicLLM(LLMClient):
                   "messages": [{"role": "user", "content": prompt}]}
         if system is not None:
             kwargs["system"] = system
-        return self._text_of(self._client.messages.create(**kwargs))
+        return self._text_of(self._create(**kwargs))
 
     def complete_json(self, prompt: str, schema: dict, *, system: str | None = None,
                       max_tokens: int = 16000) -> dict:
@@ -108,4 +118,4 @@ class AnthropicLLM(LLMClient):
                   "output_config": {"format": {"type": "json_schema", "schema": schema}}}
         if system is not None:
             kwargs["system"] = system
-        return json.loads(self._text_of(self._client.messages.create(**kwargs)))
+        return json.loads(self._text_of(self._create(**kwargs)))

@@ -20,6 +20,13 @@ datasets:
 baselines:
   - logreg@5.0                # must-beat val error (%)
 
+knobs:                        # tunable hyperparameters (name → default) the agent sets in `config`
+  lr: 0.1
+  hidden: 64
+  depth: 1
+  weight_decay: 0.0001
+  epochs: 40
+
 allowed_edits:
   - architecture
   - optimizer
