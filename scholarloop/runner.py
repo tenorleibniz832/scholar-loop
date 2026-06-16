@@ -37,9 +37,11 @@ from scholarloop.registry import VerifiedRegistry
 
 _RESULT_RE = re.compile(r"^SCHOLARLOOP_RESULT (\{.*\})\s*$", re.MULTILINE)
 
-# Seeds per fidelity tier. Smoke is a single-seed coarse screen; verify is multi-seed for
-# statistical confidence; full is one long confirmation run.
-SEEDS_PER_FIDELITY = {"smoke": [0], "verify": [0, 1, 2], "full": [0]}
+# Seeds per fidelity tier. Confidence grows monotonically up the funnel: smoke is a single-seed
+# coarse screen, verify is a 3-seed check, and full is the widest 5-seed confirmation. Full must
+# strictly extend verify's seed set (not just re-run smoke's seed 0, which is deterministic and
+# would make the final tier a vacuous repeat) so the terminal number is the tightest estimate.
+SEEDS_PER_FIDELITY = {"smoke": [0], "verify": [0, 1, 2], "full": [0, 1, 2, 3, 4]}
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -140,11 +142,15 @@ def _file_hash(path: Path) -> str:
 
 
 def _verify_frozen(path: Path, expected: str | None) -> None:
-    """Refuse to score if the frozen module was modified since the run started — a defense against
-    an adversarial train.py overwriting the trusted scorer at runtime (DESIGN §7.1). Detection, not
-    prevention: a tampered run is killed, so the agent gains nothing. Full FS isolation needs a sandbox."""
-    if expected is not None and path.exists() and _file_hash(path) != expected:
-        raise RunError(f"frozen scorer {path.name} was modified during training — refusing to trust the result")
+    """Refuse to score if the frozen module changed since the run started — a defense against an
+    adversarial train.py overwriting (or deleting) the trusted scorer at runtime (DESIGN §7.1).
+    Detection, not prevention: a tampered run is killed, so the agent gains nothing. Full FS isolation
+    needs a sandbox."""
+    if expected is None:
+        return
+    if not path.exists() or _file_hash(path) != expected:   # gone OR modified — both are tampering
+        raise RunError(f"frozen scorer {path.name} was modified or removed during training — "
+                       f"refusing to trust the result")
 
 
 def _run_seeds(seeds: list[int], run_one):

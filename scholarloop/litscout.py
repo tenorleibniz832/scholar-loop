@@ -18,6 +18,7 @@ ideas literature-grounded instead of blind local hill-climbing.
 from __future__ import annotations
 
 import json
+import re
 import ssl
 import sys
 import urllib.parse
@@ -84,10 +85,16 @@ class ArxivClient:
             papers.append(Paper(
                 title=" ".join((e.findtext(_ATOM + "title") or "").split()),
                 summary=" ".join((e.findtext(_ATOM + "summary") or "").split()),
-                arxiv_id=id_text.rsplit("/", 1)[-1],
+                arxiv_id="arXiv:" + id_text.rsplit("/", 1)[-1],   # prefixed like every other source, so dedup collapses cross-source
                 url=id_text,
             ))
         return papers
+
+
+def _strip_arxiv_version(s: str) -> str:
+    """Drop a trailing version suffix ('1512.03385v2' -> '1512.03385'). Anchored to the end so it
+    never touches a 'v' inside an old-style archive name (e.g. 'hep-th/9901001')."""
+    return re.sub(r"v\d+$", "", s.strip("/"))
 
 
 def _reconstruct_abstract(inverted: dict | None) -> str:
@@ -109,7 +116,7 @@ def _openalex_cite_id(work: dict) -> tuple[str, str]:
     for loc in locations:
         landing = (loc or {}).get("landing_page_url") or ""
         if "arxiv.org/abs/" in landing:
-            return "arXiv:" + landing.split("arxiv.org/abs/", 1)[1].split("v")[0].strip("/"), landing
+            return "arXiv:" + _strip_arxiv_version(landing.split("arxiv.org/abs/", 1)[1]), landing
     ids = work.get("ids") or {}
     if ids.get("doi"):
         return ids["doi"].replace("https://doi.org/", "doi:"), ids["doi"]
@@ -193,25 +200,34 @@ def _dedup_key(p: Paper) -> str:
     else the normalized title."""
     cid = (p.arxiv_id or "").lower()
     if cid.startswith("arxiv:"):
-        num = cid.split(":", 1)[1]            # strip the prefix first, THEN drop the version suffix
-        return "arxiv:" + num.split("v")[0]
+        return "arxiv:" + _strip_arxiv_version(cid.split(":", 1)[1])   # prefix off first, then version
     return "title:" + " ".join(p.title.lower().split())
 
 
+def _richer(p: Paper, cur: Paper) -> bool:
+    """Should `p` replace the already-seen `cur` for the same key? Prefer the record that carries a
+    citation count, then the higher count."""
+    if cur.citations is None and p.citations is not None:
+        return True
+    return (p.citations or -1) > (cur.citations or -1)
+
+
 def merge_papers(groups: list[list[Paper]], max_results: int) -> list[Paper]:
-    """Merge per-source results: de-duplicate (keeping the row that carries a citation count),
-    then rank by citations (descending; unknown last) and truncate. Pure, deterministic."""
+    """Merge per-source results: de-duplicate (keeping the higher-cited row), then rank by citations
+    (descending; unknown last) and truncate. Deterministic; the kept Paper may be back-filled with a
+    code link the discarded copy carried, so a link is never lost to the ranking choice."""
     best: dict[str, Paper] = {}
     for group in groups:
         for p in group:
             k = _dedup_key(p)
             cur = best.get(k)
-            if cur is None or (cur.citations is None and p.citations is not None) \
-                    or (p.citations or -1) > (cur.citations or -1):
-                # keep the richer record, but don't lose a code link the other copy had
-                if cur and cur.code_url and not p.code_url:
-                    p.code_url = cur.code_url
+            if cur is None:
                 best[k] = p
+                continue
+            keep, drop = (p, cur) if _richer(p, cur) else (cur, p)
+            if drop.code_url and not keep.code_url:     # never lose a code link regardless of which row wins
+                keep.code_url = drop.code_url
+            best[k] = keep
     ranked = sorted(best.values(), key=lambda p: (p.citations is None, -(p.citations or 0)))
     return ranked[:max_results]
 

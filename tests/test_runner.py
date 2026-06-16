@@ -96,7 +96,10 @@ def test_verify_frozen_detects_runtime_tamper(tmp_path):
     _verify_frozen(f, h)                          # unchanged -> ok
     _verify_frozen(f, None)                       # no baseline -> ok
     f.write_text("TAMPERED BY train.py")          # adversarial overwrite at runtime
-    with pytest.raises(RunError, match="modified during training"):
+    with pytest.raises(RunError, match="modified or removed"):
+        _verify_frozen(f, h)
+    f.unlink()                                     # adversarial DELETE must also count as tampering
+    with pytest.raises(RunError, match="modified or removed"):
         _verify_frozen(f, h)
 
 

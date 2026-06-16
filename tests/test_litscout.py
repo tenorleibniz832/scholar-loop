@@ -27,7 +27,8 @@ EMPTY_XML = '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
 def test_arxiv_parsing_from_canned_feed():
     arxiv = ArxivClient(fetcher=lambda q, n: ATOM_XML)
     papers = arxiv.search("image classification")
-    assert [p.arxiv_id for p in papers] == ["1608.03983v1", "1512.03385v1"]
+    # ids are prefixed "arXiv:" like every other source, so the same paper collapses cross-source
+    assert [p.arxiv_id for p in papers] == ["arXiv:1608.03983v1", "arXiv:1512.03385v1"]
     assert papers[0].title.startswith("SGDR")
     assert "cosine" in papers[0].summary
 
@@ -81,6 +82,16 @@ def test_merge_dedups_across_sources_and_ranks_by_citations():
     merged = merge_papers([[a, c], [b]], max_results=5)
     assert [p.arxiv_id for p in merged] == ["arXiv:1512.03385", "arXiv:9999.0001"]  # deduped, ranked
     assert merged[0].citations == 180000                     # kept the record that carried citations
+
+
+def test_same_paper_collapses_across_arxiv_and_openalex():
+    # the SAME paper from arXiv (bare-id feed) and OpenAlex (arXiv landing page) must merge to one row
+    arxiv = ArxivClient(fetcher=lambda q, n: ATOM_XML)        # includes 1512.03385v1 (ResNet)
+    oa = OpenAlexClient(fetcher=lambda q, n: OPENALEX_JSON)   # ResNet via arxiv.org/abs/1512.03385, 180k cites
+    merged = merge_papers([arxiv.search("x"), oa.search("x")], max_results=10)
+    resnet = [p for p in merged if "residual" in p.title.lower()]
+    assert len(resnet) == 1                                   # collapsed, not duplicated
+    assert resnet[0].citations == 180000                     # kept the OpenAlex copy that carries citations
 
 
 def test_scout_multisource_surfaces_citations_in_context():

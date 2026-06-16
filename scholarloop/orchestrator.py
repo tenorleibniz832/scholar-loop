@@ -200,7 +200,8 @@ class Orchestrator:
         """The smoke screen's bar: the gate widened by `smoke_slack` (a fraction of its magnitude).
         Smoke is a single noisy seed, so it should only discard ideas that are *clearly* worse than
         the gate, not borderline ones that a multi-seed verify might confirm. Scale-free, so it works
-        for both error% (gate≈5) and RMSE (gate≈60)."""
+        for both error% (gate≈5) and RMSE (gate≈60). The relative band assumes a gate magnitude away
+        from 0 (true for all error/RMSE-style metrics); a gate of exactly 0 degenerates to no slack."""
         margin = abs(gate) * self.smoke_slack
         return gate + margin if self.profile.metric.direction == "minimize" else gate - margin
 
@@ -222,10 +223,11 @@ class Orchestrator:
             return False                                   # didn't clear the bar — drop it cheaply
         if fidelity == "verify":                           # statistical-significance gate (not just the mean)
             seeds = entry.metric.get("seeds") or [score]
+            if len(seeds) < 2:                             # a degraded verify (seeds crashed) isn't the
+                return False                               # multi-seed robustness check full deserves
             bound = confidence_bound(seeds, self.profile.metric.direction, self.promote_z)
-            if not self.profile.metric.is_better(bound, gate):
-                return False                               # improvement isn't robust to seed noise
-        return True
+            return self.profile.metric.is_better(bound, gate)   # promote only if robust to seed noise
+        return False                                       # default-deny: only smoke/verify ever climb
 
     def _apply_advice(self, entries: list[LedgerEntry]) -> None:
         decision = (self.last_advice or {}).get("decision", "proceed")

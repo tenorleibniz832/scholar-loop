@@ -109,7 +109,7 @@ for each idea from L3 (already carries a literature citation + must-beat baselin
   2. Guard check: did the diff touch forbidden_edits, or fall outside the constraints? → discard
   3. SMOKE  (smoke_sec, single seed)        → coarse screen: kill only ideas clearly worse than the gate (slack band)
   4. VERIFY (verify_sec, 3 seeds)           → smoke survivors enter; promote only if the pessimistic bound beats the gate
-  5. FULL   (full_sec, sparingly)           → only for "stable winners" from verify
+  5. FULL   (full_sec, 5 seeds, sparingly)  → only "stable winners" from verify; widest seed set = tightest final number
   6. Write every number into the VerifiedRegistry + ledger at each step
   7. Advisor analyzes → PROCEED / REFINE (back to step 1) / PIVOT (back to L3); kill after N REFINEs
   8. REFLECTOR (§4.5): score prediction vs measurement → distill one lesson into the Skill Library

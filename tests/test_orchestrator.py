@@ -180,6 +180,13 @@ def test_promote_gate_uses_statistical_significance(tmp_path):
                         verdict="kept")
     assert orch._promote(tight, "verify", 4.9) is True
     assert orch._promote(tight, "full", 4.9) is False        # full is terminal
+    # a degraded verify (only 1 seed survived the crash) is NOT the robustness check full deserves
+    degraded = LedgerEntry(id="e3", domain="image-classification",
+                           hypothesis=Hypothesis("c", "arXiv:1"), metric_name="val_top1_err",
+                           fidelity=["verify"], metric={"verify": 4.0, "seeds": [4.0]}, verdict="kept")
+    assert orch._promote(degraded, "verify", 4.9) is False
+    # an unrecognized tier never climbs on the bare mean (default-deny)
+    assert orch._promote(tight, "rerun", 4.9) is False
 
 
 def test_smoke_screen_keeps_borderline_but_drops_clearly_worse(tmp_path):
