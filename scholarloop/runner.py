@@ -19,6 +19,7 @@ CLI:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -93,7 +94,8 @@ def _run(module_args: list[str], cwd: Path, timeout_sec: int, extra_env: dict, s
 
 
 def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: int,
-                  config_override: dict | None, engine_cwd: Path) -> dict:
+                  config_override: dict | None, engine_cwd: Path,
+                  frozen_guard: tuple = (None, None)) -> dict:
     """Two-phase run for one seed (DESIGN §7.1 — the reward-hacking guard).
 
     Phase 1 runs the EDITABLE train module, which must write a model artifact to
@@ -116,7 +118,9 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
             raise RunError(f"seed {seed}: train produced no artifact")
 
         # Frozen scorer — the trusted metric — runs from PRISTINE ROOT, never the (possibly
-        # edited / runtime-tampered) engine copy, so train.py cannot reach the scoring code.
+        # edited / runtime-tampered) engine copy. Plus: verify the scorer file wasn't tampered
+        # at runtime before we trust it.
+        _verify_frozen(*frozen_guard)
         p2 = _run([score_module, "score", artifact], ROOT, max(120, timeout_sec), extra, seed, "score")
         if p2.returncode != 0:
             raise RunError(f"seed {seed}: score exit {p2.returncode}\n{p2.stderr[-500:]}")
@@ -129,6 +133,18 @@ def _run_one_seed(train_module: str, score_module: str, seed: int, timeout_sec: 
             os.remove(artifact)
         except OSError:
             pass
+
+
+def _file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _verify_frozen(path: Path, expected: str | None) -> None:
+    """Refuse to score if the frozen module was modified since the run started — a defense against
+    an adversarial train.py overwriting the trusted scorer at runtime (DESIGN §7.1). Detection, not
+    prevention: a tampered run is killed, so the agent gains nothing. Full FS isolation needs a sandbox."""
+    if expected is not None and path.exists() and _file_hash(path) != expected:
+        raise RunError(f"frozen scorer {path.name} was modified during training — refusing to trust the result")
 
 
 def _run_seeds(seeds: list[int], run_one):
@@ -180,6 +196,8 @@ def run_experiment(
 
     train_module = _module_from_entrypoint(profile.train_entrypoint)
     score_module = _module_from_entrypoint(profile.fixed_module)   # frozen scorer owns the metric
+    frozen_file = ROOT / profile.fixed_module
+    frozen_hash = _file_hash(frozen_file) if frozen_file.exists() else None
     budget = profile.budget.seconds_for(fidelity)
     seeds = SEEDS_PER_FIDELITY[fidelity]
     engine_root = _engine_root(profile.train_entrypoint, edits) if edits else None
@@ -191,7 +209,7 @@ def run_experiment(
     try:
         results, failures = _run_seeds(
             seeds, lambda s: _run_one_seed(train_module, score_module, s, budget,
-                                           config_override, engine_cwd))
+                                           config_override, engine_cwd, (frozen_file, frozen_hash)))
         per_seed = [float(r["value"]) for r in results]
         config = results[0].get("config", {})   # hparams are fixed across seeds for one run
         agg = round(mean(per_seed), 4)

@@ -87,6 +87,19 @@ def test_run_seeds_tolerates_partial_failure():
         _run_seeds([0, 1], always_fail)
 
 
+def test_verify_frozen_detects_runtime_tamper(tmp_path):
+    from scholarloop.runner import RunError, _file_hash, _verify_frozen
+
+    f = tmp_path / "prepare.py"
+    f.write_text("FROZEN SCORER")
+    h = _file_hash(f)
+    _verify_frozen(f, h)                          # unchanged -> ok
+    _verify_frozen(f, None)                       # no baseline -> ok
+    f.write_text("TAMPERED BY train.py")          # adversarial overwrite at runtime
+    with pytest.raises(RunError, match="modified during training"):
+        _verify_frozen(f, h)
+
+
 def test_run_experiment_kill_path(tmp_path):
     # a train entrypoint that cannot be imported -> nonzero exit -> "killed" verdict,
     # registry marked killed with no measurements (not a clean empty run).

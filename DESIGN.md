@@ -277,7 +277,16 @@ dead idea can't loop forever); the Director sets the campaign's direction and re
      - *Path traversal / import-shadowing via the edit channel* — the source-diff channel may ONLY replace the train entrypoint (strict allowlist, normpath-checked), with a containment guard in `_engine_root`. A `../../scholarloop/x.py` or new-shadow-file edit is refused before any write.
      - *Runtime tamper of the scorer* — the scorer runs from pristine ROOT, never the edited engine copy, so train.py can't reach the scoring code through its working dir.
      - *Arbitrary-unpickle code-exec in the scorer* — the torch engine saves a `state_dict` and the frozen `build_model` reconstructs the architecture; the scorer loads with `weights_only=True` (no agent objects unpickled).
-     - **Residual boundary (needs sandboxing, documented honestly):** a *deliberately filesystem-adversarial* train.py could still write absolute paths to overwrite ROOT, and for a *public* dataset the val split is reconstructable (deterministic split over public data). Both require container isolation of the train process + a runner-provisioned private holdout — an infra layer beyond this guard. The current guards defeat the realistic (LLM-proposing-edits) threat model, not a hostile process with filesystem access.
+     - *Runtime tamper of the frozen scorer* — a frozen-module integrity hash is taken at the start
+       of the run and re-checked before every score; if `train.py` overwrote the frozen `prepare.py`
+       at runtime, the result is refused (the run is killed, so the agent gains nothing). Detection,
+       not prevention.
+     - **Residual boundary (needs sandboxing, documented honestly):** the integrity hash *detects*
+       a tampered scorer but doesn't *prevent* arbitrary filesystem writes; and for a *public* dataset
+       the val split is reconstructable (deterministic split over public data). True prevention needs
+       container isolation of the train process + a runner-provisioned private holdout — an infra layer
+       beyond these guards. The current guards defeat the realistic (LLM-proposing-edits) threat model,
+       not a hostile process with unrestricted filesystem access.
 2. **Statistical noise**: wins from a 5-min / 120s run are mostly noise. → multi-seed + a verify layer for confirmation; don't let a noisy winner pollute the ledger.
 3. **Search-space explosion**: → literature grounding narrows the prior to validated directions, and the Reasoning Layer (§4.5) prunes exhausted regions + focuses high-leverage knobs each round.
 4. **Cost**: 100 experiments/night × seeds × full-runs is a real bill. → Director budget allocation + auto-pause at 50/80/100% is survival, not a nice-to-have.
