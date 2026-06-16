@@ -110,7 +110,9 @@ def main() -> int:
     skills_dir = Path(tempfile.mkdtemp(prefix="paper_skl_"))
     llm = AnthropicLLM(model=model)
     profile = load_profile(ROOT / "profiles" / "digits-mlp.yaml")
-    skills = SkillLibrary(skills_dir)
+    # SCHOLARLOOP_PERSIST_SKILLS=1 -> ~/.scholarloop/skills/<domain>, so lessons compound across runs
+    skills = (SkillLibrary.for_domain(profile.name) if os.environ.get("SCHOLARLOOP_PERSIST_SKILLS")
+              else SkillLibrary(skills_dir))
 
     if paper_only:
         entries = list(Ledger(ledger_path).read_all())

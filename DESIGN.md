@@ -95,7 +95,9 @@ Each entry = `{category, severity s∈(0,1], mitigation, source, ts}`. On the ne
 entries are injected into the Reasoner prompt with a time-decay weight `w = s·2^(-Δdays/T½)`
 (== `s·exp(-ln2·Δt/T½)`, T½ ≈ 30 days). The Reflector mines these from each run's outcome
 (a large `calibration_error` is a strong signal); dedup is by content hash so a rejected
-lesson can't reappear as fresh. No training, backbone-agnostic. (Implemented in `skills.py`.)
+lesson can't reappear as fresh. No training, backbone-agnostic. `SkillLibrary.for_domain(name)`
+persists per-domain under `~/.scholarloop/skills/<domain>/`, so intuition **compounds across
+campaigns** (not just within one run), kept isolated per domain. (Implemented in `skills.py`.)
 
 ---
 

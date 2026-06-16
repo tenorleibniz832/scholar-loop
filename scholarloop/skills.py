@@ -46,6 +46,14 @@ class SkillLibrary:
         self.dir = Path(path)
         self.half_life_days = half_life_days
 
+    @classmethod
+    def for_domain(cls, domain: str, *, root: str | Path | None = None,
+                   half_life_days: float = 30.0) -> "SkillLibrary":
+        """A library persisted per-domain so intuition compounds ACROSS campaigns (not just within
+        one run). Defaults to ~/.scholarloop/skills/<domain>/; skills stay isolated per domain."""
+        base = Path(root) if root is not None else (Path.home() / ".scholarloop" / "skills")
+        return cls(base / domain, half_life_days=half_life_days)
+
     def add(self, skill: Skill) -> Skill:
         """Write (or refresh in place, by content id) a lesson."""
         self.dir.mkdir(parents=True, exist_ok=True)

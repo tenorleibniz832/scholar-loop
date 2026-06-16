@@ -51,6 +51,9 @@ def main() -> int:
     llm = AnthropicLLM(model=model)          # one client, shared by every agent
     profile = load_profile(ROOT / "profiles" / "digits-mlp.yaml")
     tmp = Path(tempfile.mkdtemp(prefix="e2e_"))
+    # SCHOLARLOOP_PERSIST_SKILLS=1 -> ~/.scholarloop/skills/<domain>, compounding across runs
+    skills = (SkillLibrary.for_domain(profile.name) if os.environ.get("SCHOLARLOOP_PERSIST_SKILLS")
+              else SkillLibrary(tmp / "skills"))
 
     orch = Orchestrator(
         llm, profile,
@@ -59,7 +62,7 @@ def main() -> int:
         reflector=Reflector(llm),
         advisor=Advisor(llm),
         director=Director(llm, profile),
-        skill_library=SkillLibrary(tmp / "skills"),
+        skill_library=skills,
         topic=topic,
         ledger_path=tmp / "ledger.jsonl", registry_dir=tmp / "registry",
     )
@@ -73,7 +76,7 @@ def main() -> int:
     for e in Ledger(tmp / "ledger.jsonl").read_all():
         print(f"  {e.id} {e.fidelity[0]:<6} {e.metric_name}={e.primary_score()}% {e.verdict:<10}"
               f" {e.hypothesis.source}")
-    print(f"\n--- skill library ---\n{SkillLibrary(tmp / 'skills').render() or '  (none)'}")
+    print(f"\n--- skill library ---\n{skills.render() or '  (none)'}")
     print(f"\n--- agent calls (auditable trace) ---\n  "
           f"{dict(Counter(c.agent for c in orch.trace.calls))}")
 

@@ -27,6 +27,16 @@ def test_library_dedup_overwrites_same_lesson(tmp_path):
     assert len(lib.all()) == 2
 
 
+def test_skills_persist_and_isolate_per_domain(tmp_path):
+    # a lesson written in one campaign is visible to a fresh library at the same per-domain path
+    SkillLibrary.for_domain("digits-mlp", root=tmp_path).add(
+        Skill.make("optimizer", 0.8, "cosine helps", "exp_1", 0.0))
+    later = SkillLibrary.for_domain("digits-mlp", root=tmp_path)
+    assert len(later.all()) == 1 and "cosine helps" in later.render(now=0.0)
+    # a different domain is isolated — no cross-domain leakage
+    assert SkillLibrary.for_domain("diabetes-mlp", root=tmp_path).all() == []
+
+
 def test_active_ranks_by_decayed_weight(tmp_path):
     lib = SkillLibrary(tmp_path)
     lib.add(Skill.make("a", 0.9, "recent strong", "e1", 10 * DAY))
