@@ -27,6 +27,7 @@ from scholarloop.litscout import LitScout
 from scholarloop.llm import LLMClient
 from scholarloop.profile import Profile
 from scholarloop.reasoner import Reasoner
+from scholarloop.governor import Governor, cost_of
 from scholarloop.reasoning import confidence_bound
 from scholarloop.reflector import Reflector
 from scholarloop.skills import SkillLibrary
@@ -47,6 +48,7 @@ class Orchestrator:
                  ledger_path: str | Path = "ledger.jsonl",
                  registry_dir: str | Path = "registry"):
         self.profile = profile
+        self.llm = llm                           # shared client; usage accumulates here for the Governor
         self.trace = trace or AgentTrace()       # one shared trace: every agent call is logged
         self.reasoner = Reasoner(llm, profile, trace=self.trace)
         self.lit_scout = lit_scout
@@ -83,11 +85,23 @@ class Orchestrator:
             self._lit = self.lit_scout.scout(self.topic)
         return self._lit
 
-    def _next_id(self, entries: list[LedgerEntry]) -> str:
-        # derive from the max existing suffix, not the count — robust to resumed/gapped ledgers
+    @staticmethod
+    def _max_suffix(entries: list[LedgerEntry]) -> int:
+        # the largest exp_NNNN suffix seen — robust to resumed/gapped ledgers (not a count)
         nums = [int(e.id.split("_", 1)[1]) for e in entries
                 if e.id.startswith("exp_") and e.id.split("_", 1)[1].isdigit()]
-        return f"exp_{max(nums, default=0) + 1:04d}"
+        return max(nums, default=0)
+
+    def _next_id(self, entries: list[LedgerEntry]) -> str:
+        return f"exp_{self._max_suffix(entries) + 1:04d}"
+
+    def _best_of(self, entries: list[LedgerEntry]):
+        """The best-scoring entry in a batch by the metric direction (None scores ignored)."""
+        scored = [e for e in entries if e.primary_score() is not None]
+        if not scored:
+            return entries[-1] if entries else None
+        return min(scored, key=lambda e: e.primary_score()) if self.profile.metric.direction == "minimize" \
+            else max(scored, key=lambda e: e.primary_score())
 
     def _parent(self, entries: list[LedgerEntry]):
         """The frontier to iterate from: the current best kept entry, else the last run."""
@@ -155,6 +169,20 @@ class Orchestrator:
         self._post_run(entry, parent, entries)
         return entry
 
+    def _climb_from(self, smoke_entry, proposal, reasoning, tiers, gate, known) -> list[LedgerEntry]:
+        """Climb an already-smoked idea up the remaining tiers (verify→full), chaining via `parent`
+        and stopping the moment a tier fails its promotion gate. Returns the entries produced."""
+        produced: list[LedgerEntry] = []
+        prev = smoke_entry
+        for fidelity in tiers:
+            entry = self._run_tier(proposal, reasoning, fidelity,
+                                   self._next_id(known + produced), prev.id, prev.primary_score(), None)
+            produced.append(entry)
+            if not self._promote(entry, fidelity, gate):
+                break
+            prev = entry
+        return produced
+
     def funnel_step(self, *, tiers=("smoke", "verify", "full"), lit_context: str = "",
                     skills: str = "", lit_priors: list[str] | None = None) -> list[LedgerEntry]:
         """Funnel one idea up the fidelity ladder (DESIGN §3): each tier must clear a promotion
@@ -169,21 +197,71 @@ class Orchestrator:
         frontier = self._parent(entries)
         frontier_score = frontier.primary_score() if frontier else None
         gate = self._gate_score(frontier_score)        # must beat the frontier (or baseline) to climb
-        produced: list[LedgerEntry] = []
-        for i, fidelity in enumerate(tiers):
-            if i == 0:                                  # smoke: child of the frontier, calibrated vs it
-                parent_id = frontier.id if frontier else None
-                parent_score, pred = frontier_score, proposal.predicted_delta
-            else:                                       # higher tiers confirm: chain, and no new prediction
-                prev = produced[-1]
-                parent_id, parent_score, pred = prev.id, prev.primary_score(), None
-            entry = self._run_tier(proposal, reasoning, fidelity,
-                                   self._next_id(entries + produced), parent_id, parent_score, pred)
-            produced.append(entry)
-            if not self._promote(entry, fidelity, gate):
-                break
-        if produced:
-            self._post_run(produced[-1], frontier, entries + produced)
+        smoke = self._run_tier(proposal, reasoning, tiers[0], self._next_id(entries),
+                               frontier.id if frontier else None, frontier_score, proposal.predicted_delta)
+        produced = [smoke]
+        if self._promote(smoke, tiers[0], gate):
+            produced += self._climb_from(smoke, proposal, reasoning, tiers[1:], gate, entries + produced)
+        self._post_run(produced[-1], frontier, entries + produced)
+        return produced
+
+    def population_step(self, k: int = 4, *, tiers=("smoke", "verify", "full"),
+                        max_workers: int = 1, lit_context: str = "", skills: str = "",
+                        lit_priors: list[str] | None = None) -> list[LedgerEntry]:
+        """Population funnel (parallel fan-out): propose up to `k` distinct ideas, smoke-screen them
+        ALL (concurrently when max_workers>1), then climb only the smoke survivors up verify→full.
+        Expensive tiers are spent on a pre-screened few, not on every idea. Returns every entry run."""
+        entries = list(Ledger(self.ledger_path).read_all())
+        frontier = self._parent(entries)
+        frontier_score = frontier.primary_score() if frontier else None
+        gate = self._gate_score(frontier_score)
+
+        # Phase 1 — propose up to k admissible, mutually-distinct ideas.
+        batch: list[tuple] = []
+        seen: list[dict] = []
+        for _ in range(k):
+            prepared = self._propose(entries, lit_context=lit_context, skills=skills, lit_priors=lit_priors)
+            if prepared is None:
+                continue
+            proposal, reasoning = prepared
+            if any(proposal.config == c for c in seen):
+                continue                                # don't smoke the same config twice in one round
+            seen.append(proposal.config)
+            batch.append((proposal, reasoning))
+        if not batch:
+            return []
+
+        # Phase 2 — smoke every idea (ids assigned up front so parallel writers never collide).
+        base = self._max_suffix(entries)
+        smoke_tier = tiers[0]
+        parent_id = frontier.id if frontier else None
+
+        def smoke_one(item):
+            i, (proposal, reasoning) = item
+            return self._run_tier(proposal, reasoning, smoke_tier, f"exp_{base + 1 + i:04d}",
+                                  parent_id, frontier_score, proposal.predicted_delta)
+
+        items = list(enumerate(batch))
+        if max_workers > 1 and len(items) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                smoked = list(ex.map(smoke_one, items))
+        else:
+            smoked = [smoke_one(it) for it in items]
+        produced = list(smoked)
+
+        # Phase 3 — climb only the smoke survivors, best-first, through the remaining tiers.
+        survivors = [(e, batch[i][0], batch[i][1]) for i, e in enumerate(smoked)
+                     if self._promote(e, smoke_tier, gate)]
+        survivors.sort(key=lambda t: t[0].primary_score() if t[0].primary_score() is not None else float("inf"),
+                       reverse=(self.profile.metric.direction == "maximize"))
+        for smoke_entry, proposal, reasoning in survivors:
+            produced += self._climb_from(smoke_entry, proposal, reasoning, tiers[1:], gate,
+                                         entries + produced)
+
+        best = self._best_of(produced)
+        if best is not None:
+            self._post_run(best, frontier, entries + produced)
         return produced
 
     def _gate_score(self, frontier_score: float | None) -> float | None:
@@ -258,23 +336,68 @@ class Orchestrator:
             self.guidance = (f"{rationale} — change approach: explore a different architecture/"
                              "optimizer outside the current focus and ruled-out regions.").strip()
 
-    def run(self, n_steps: int, *, fidelity: str = "smoke", funnel: bool = False,
-            lit_context: str = "", skills: str = "") -> list[LedgerEntry]:
-        """Run up to n_steps autonomous iterations; returns the entries that actually ran.
+    def _spent(self) -> float | None:
+        """Cumulative LLM spend (USD) for the Governor, or None when the model has no known price."""
+        usage = getattr(self.llm, "usage", None) or {}
+        return cost_of(usage, getattr(self.llm, "model", None))
 
-        With funnel=True each iteration funnels one idea through smoke→verify→full (cheap screen
-        first); otherwise each iteration is a single run at `fidelity`.
+    def _round(self, *, funnel, population, fidelity, max_workers, lit_context, skills) -> list[LedgerEntry]:
+        """One campaign round: a population funnel, a single-idea funnel, or one flat run."""
+        if population > 1:
+            return self.population_step(population, max_workers=max_workers,
+                                        lit_context=lit_context, skills=skills)
+        if funnel:
+            return self.funnel_step(lit_context=lit_context, skills=skills)
+        entry = self.step(fidelity=fidelity, lit_context=lit_context, skills=skills)
+        return [entry] if entry is not None else []
+
+    def run(self, n_steps: int | None = None, *, fidelity: str = "smoke", funnel: bool = False,
+            population: int = 1, max_workers: int = 1, governor: Governor | None = None,
+            lit_context: str = "", skills: str = "") -> list[LedgerEntry]:
+        """Run autonomous rounds; returns the entries that actually ran.
+
+        Bounding the campaign (at least one is required, else it's a single round):
+          - `n_steps` — a fixed round count (the classic mode), and/or
+          - `governor` — a `Governor` that stops on a USD budget, a round cap, or convergence
+            (`dry_patience` rounds with no frontier improvement). Checked at the top of each round.
+
+        Each round is shaped by:
+          - `population>1` — a parallel population funnel (propose N, smoke all, climb survivors),
+          - else `funnel=True` — one idea through smoke→verify→full,
+          - else a single flat run at `fidelity`.
         """
         if self.director is not None and not self._directed:   # set the campaign direction once
             d = self.director.direct(list(Ledger(self.ledger_path).read_all()))
             self.topic, self.guidance, self._directed = d.get("topic", self.topic), \
                 d.get("direction", ""), True
+        direction = self.profile.metric.direction
+        if governor is not None:                               # seed convergence tracking from any prior best
+            fr = self._parent(list(Ledger(self.ledger_path).read_all()))
+            if fr is not None:
+                governor.update_frontier(fr.primary_score(), direction)
         out: list[LedgerEntry] = []
-        for _ in range(n_steps):
-            if funnel:
-                out.extend(self.funnel_step(lit_context=lit_context, skills=skills))
-            else:
-                entry = self.step(fidelity=fidelity, lit_context=lit_context, skills=skills)
-                if entry is not None:
-                    out.append(entry)
+        round_idx = 0
+        while True:
+            if governor is not None:
+                stop, why = governor.should_stop(self._spent())
+                if stop:
+                    print(f"governor: stopping — {why}", file=sys.stderr)
+                    break
+            if n_steps is not None and round_idx >= n_steps:
+                break
+            if n_steps is None and governor is None:               # nothing bounds the loop -> one round
+                if round_idx >= 1:
+                    break
+
+            produced = self._round(funnel=funnel, population=population, fidelity=fidelity,
+                                    max_workers=max_workers, lit_context=lit_context, skills=skills)
+            out.extend(produced)
+            round_idx += 1
+
+            if governor is not None:
+                kept = [e for e in produced if e.verdict == "kept"]
+                improved = any(governor.update_frontier(e.primary_score(), direction) for e in kept)
+                governor.record_round(improved)
+                for alert in governor.alerts(self._spent()):
+                    print(f"governor: {alert}", file=sys.stderr)
         return out

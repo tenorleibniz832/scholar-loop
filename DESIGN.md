@@ -121,6 +121,17 @@ The **multi-fidelity funnel** is the survival strategy on a small cluster: a 120
 
 The gate itself is the more stringent of the frontier and the per-domain `baseline`, which is calibrated to what the engine can actually reach (see the profile comments: digits ~3.1% floor → baseline 5.0; diabetes ties the linear model ~56.5). Tiers chain via `parent`; the Reasoner/debate/reflect/advisor wrap the idea once, not per tier.
 
+### 3.1 Loop engineering — population fan-out + a governed loop
+
+The funnel above runs one idea at a time. **`population_step(k, max_workers=N)`** turns it into a **parallel population funnel**: propose `k` mutually-distinct ideas, **smoke-screen them all at once** (concurrently — each run is a subprocess, so threads give real parallelism; the ledger append takes a process lock so concurrent writers can't interleave), then climb only the smoke survivors up verify→full, best-first. Expensive tiers are spent on a pre-screened few, not on every idea — the high-recall/high-precision shape applied to a *batch*. Experiment ids are assigned up front so parallel writers never collide.
+
+The campaign loop itself is **governed** rather than fixed-length. `run(..., governor=Governor(...))` consults a small pure state machine at the top of each round that ends the campaign on any of three independent conditions:
+- **budget** — a USD ceiling on cumulative LLM spend (`cost_of` prices the shared client's `usage`), with 50/80/100% alerts on the way up;
+- **rounds** — a hard iteration cap;
+- **convergence** — *loop-until-dry*: stop after `dry_patience` rounds with no frontier improvement (keep going while ideas still help, stop once the search has clearly plateaued).
+
+`Governor` calls no LLM, so the stop logic is fully unit-tested on its own. Together these make an autonomous loop you can actually let run unattended: it fans out to explore, screens cheaply in parallel, concentrates compute on survivors, and halts itself when the money, the patience, or the headroom runs out.
+
 ---
 
 ## 4. L3 Idea Engine (the key to escaping "local hill-climbing")

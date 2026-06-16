@@ -19,10 +19,16 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Iterator
+
+# Serializes appends within a process so parallel workers (the population funnel) can't interleave
+# records even when an entry exceeds the OS atomic-write size (PIPE_BUF). Cross-process writers still
+# rely on O_APPEND atomicity, which holds for the common small-line case.
+_WRITE_LOCK = threading.Lock()
 
 VERDICTS = ("kept", "discarded", "killed", "pending")
 FIDELITIES = ("smoke", "verify", "full")
@@ -96,11 +102,12 @@ class Ledger:
         line = entry.to_json() + "\n"
         # O_APPEND writes are atomic for a single line below PIPE_BUF, so concurrent
         # workers cannot interleave partial records.
-        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-        try:
-            os.write(fd, line.encode("utf-8"))
-        finally:
-            os.close(fd)
+        with _WRITE_LOCK:
+            fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            try:
+                os.write(fd, line.encode("utf-8"))
+            finally:
+                os.close(fd)
         return entry
 
     def read_all(self) -> Iterator[LedgerEntry]:

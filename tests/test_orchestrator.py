@@ -164,6 +164,37 @@ def test_funnel_loser_dies_at_smoke(tmp_path):
     assert produced[0].fidelity == ["smoke"] and produced[0].verdict == "discarded"
 
 
+def test_population_funnel_smokes_all_then_climbs_only_survivors(tmp_path):
+    # propose 3 ideas in one round: two beat the baseline (climb), one is far off (dies at smoke)
+    good1 = {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}    # ~3.76
+    good2 = {"lr": 0.1, "depth": 22, "weight_decay": 5e-4, "warmup": 5}    # ~3.92
+    bad = {"lr": 0.05, "depth": 18, "weight_decay": 1e-4, "warmup": 0}     # ~7.9 -> dies at smoke
+    llm = MockLLM(jsons=[_proposal_json(good1), _proposal_json(good2), _proposal_json(bad)])
+    orch = Orchestrator(llm, PROFILE, ledger_path=tmp_path / "ledger.jsonl",
+                        registry_dir=tmp_path / "registry")
+    produced = orch.population_step(k=3)
+
+    smokes = [e for e in produced if e.fidelity == ["smoke"]]
+    assert len(smokes) == 3                                  # every idea got a smoke screen
+    assert len({e.id for e in produced}) == len(produced)    # ids never collide across the batch
+    # the clearly-bad idea never leaves smoke
+    bad_rows = [e for e in produced if e.config == bad]
+    assert len(bad_rows) == 1 and bad_rows[0].verdict == "discarded"
+    # at least one good idea climbed past smoke into verify/full
+    assert any(e.fidelity[0] in ("verify", "full") for e in produced)
+
+
+def test_run_with_governor_stops_on_round_cap(tmp_path):
+    from scholarloop.governor import Governor
+
+    cfg = {"lr": 0.1, "depth": 20, "weight_decay": 5e-4, "warmup": 5}
+    gov = Governor(max_rounds=2)
+    orch = Orchestrator(MockLLM(jsons=[_proposal_json(cfg)] * 8), PROFILE,
+                        ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
+    orch.run(governor=gov, funnel=True)                     # no n_steps: the governor bounds the loop
+    assert gov.rounds == 2                                   # stopped exactly at the cap
+
+
 def test_promote_gate_uses_statistical_significance(tmp_path):
     orch = Orchestrator(MockLLM(), PROFILE,            # promote_z=1.0 default
                         ledger_path=tmp_path / "ledger.jsonl", registry_dir=tmp_path / "registry")
