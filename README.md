@@ -62,8 +62,8 @@ papers as too marginal. (It's not wrong.) Click a domain for the captured paper,
 
 > The LLM does only the open-ended reasoning. Everything checkable — search-space pruning, dedup,
 > calibration, number-grounding, promotion gates — is deterministic, unit-tested code, and the
-> metric is the **only** optimization target (no LLM-as-judge). Three adversarial review passes
-> found and fixed real bugs; see [`DESIGN.md`](DESIGN.md) for the architecture and residual boundaries.
+> metric is the **only** optimization target (no LLM-as-judge). Multiple adversarial review passes
+> found and fixed real bugs across the loop's correctness and reward-hacking boundaries.
 
 ## 🚀 Quickstart
 

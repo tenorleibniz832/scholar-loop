@@ -14,7 +14,7 @@ Import the contracts directly, e.g.:
     from scholarloop.registry import VerifiedRegistry
 
 Submodules are intentionally not re-exported here so that `python -m scholarloop.<mod>`
-CLIs run without an import-ordering warning. See DESIGN.md for the full architecture.
+CLIs run without an import-ordering warning. Each module's docstring documents its role.
 """
 
 __version__ = "0.0.1"
